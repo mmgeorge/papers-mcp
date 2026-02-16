@@ -1,0 +1,393 @@
+# OpenAlex API Specification
+# Single source of truth for all endpoints, parameters, response types, and enum values.
+# Reference: https://docs.openalex.org
+
+# ── Enums ───────────────────────────────────────────────────────────────
+
+[enums.work_type]
+values = ["article", "preprint", "paratext", "letter", "editorial", "erratum", "libguides", "supplementary-materials", "review"]
+description = "OpenAlex simplified work type. 'article' covers journal articles, proceedings articles, and posted content. 'paratext' is content about a venue (covers, TOCs). 'review' is from review-only journals."
+
+[enums.work_type_crossref]
+values = ["book-section", "monograph", "report-component", "report", "peer-review", "book-track", "journal-article", "book-part", "other", "book", "journal-volume", "book-set", "reference-entry", "proceedings-article", "journal", "component", "book-chapter", "proceedings-series", "report-series", "proceedings", "database", "standard", "reference-book", "posted-content", "journal-issue", "dissertation", "grant", "dataset", "book-series", "edited-book"]
+description = "Crossref type controlled vocabulary. More granular than work_type. 30 values covering all scholarly content types."
+
+[enums.source_type]
+values = ["journal", "repository", "conference", "ebook platform", "book series", "metadata", "other"]
+description = "Type of publishing venue. 'journal' for periodicals, 'repository' for preprint servers and institutional repos, 'conference' for proceedings."
+
+[enums.institution_type]
+values = ["Education", "Healthcare", "Company", "Archive", "Nonprofit", "Government", "Facility", "Other"]
+description = "ROR-controlled vocabulary for institution classification."
+
+[enums.oa_status]
+values = ["diamond", "gold", "green", "hybrid", "bronze", "closed"]
+description = "Open access status. diamond=free no APC, gold=OA journal with APC, green=repository copy, hybrid=OA article in subscription journal, bronze=free to read but no license, closed=paywalled."
+
+[enums.author_position]
+values = ["first", "middle", "last"]
+description = "Position of author in the author list of a work."
+
+[enums.location_version]
+values = ["publishedVersion", "acceptedVersion", "submittedVersion"]
+description = "Version of the work at a given location. publishedVersion=final, acceptedVersion=post-peer-review, submittedVersion=preprint."
+
+[enums.role_type]
+values = ["institution", "funder", "publisher"]
+description = "Some organizations serve multiple roles in the research ecosystem. The same entity can appear as a funder, publisher, and institution."
+
+[enums.institution_relationship]
+values = ["parent", "child", "related"]
+description = "Relationship between associated institutions. parent=governing org, child=subsidiary, related=affiliated."
+
+[enums.entity_type]
+values = ["author", "concept", "institution", "source", "publisher", "funder", "work"]
+description = "Entity types returned by autocomplete. 'concept' is deprecated but still works in autocomplete."
+
+[enums.indexed_in]
+values = ["arxiv", "crossref", "doaj", "pubmed"]
+description = "External indexes that include a given work."
+
+[enums.sort_field]
+values = ["display_name", "cited_by_count", "works_count", "publication_date", "relevance_score"]
+description = "Fields available for sorting list results. Append :desc for descending order. relevance_score only available when a search query is active."
+
+# ── List Endpoints ──────────────────────────────────────────────────────
+
+[[endpoints]]
+id = "list_works"
+method = "GET"
+path = "/works"
+rust_method = "list_works"
+response_type = "ListResponse<Work>"
+param_struct = "ListParams"
+description = "List scholarly works (articles, books, datasets, preprints). 240M+ records."
+
+[[endpoints]]
+id = "list_authors"
+method = "GET"
+path = "/authors"
+rust_method = "list_authors"
+response_type = "ListResponse<Author>"
+param_struct = "ListParams"
+description = "List disambiguated author profiles. 110M+ records."
+
+[[endpoints]]
+id = "list_sources"
+method = "GET"
+path = "/sources"
+rust_method = "list_sources"
+response_type = "ListResponse<Source>"
+param_struct = "ListParams"
+description = "List publishing venues: journals, repositories, conferences, ebook platforms, and book series."
+
+[[endpoints]]
+id = "list_institutions"
+method = "GET"
+path = "/institutions"
+rust_method = "list_institutions"
+response_type = "ListResponse<Institution>"
+param_struct = "ListParams"
+description = "List research organizations: universities, hospitals, companies, government agencies."
+
+[[endpoints]]
+id = "list_topics"
+method = "GET"
+path = "/topics"
+rust_method = "list_topics"
+response_type = "ListResponse<Topic>"
+param_struct = "ListParams"
+description = "List research topics organized in a 3-level hierarchy: domain > field > subfield > topic."
+
+[[endpoints]]
+id = "list_publishers"
+method = "GET"
+path = "/publishers"
+rust_method = "list_publishers"
+response_type = "ListResponse<Publisher>"
+param_struct = "ListParams"
+description = "List publishing organizations (e.g. Elsevier, Springer Nature)."
+
+[[endpoints]]
+id = "list_funders"
+method = "GET"
+path = "/funders"
+rust_method = "list_funders"
+response_type = "ListResponse<Funder>"
+param_struct = "ListParams"
+description = "List research funding organizations (e.g. NIH, NSF, ERC)."
+
+# ── Single Entity Endpoints ─────────────────────────────────────────────
+
+[[endpoints]]
+id = "get_work"
+method = "GET"
+path = "/works/{id}"
+rust_method = "get_work"
+response_type = "Work"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (W...)", "DOI", "PMID (pmid:...)", "PMCID (pmcid:...)", "MAG (mag:...)"]
+description = "Get a single scholarly work by ID."
+
+[[endpoints]]
+id = "get_author"
+method = "GET"
+path = "/authors/{id}"
+rust_method = "get_author"
+response_type = "Author"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (A...)", "ORCID"]
+description = "Get a single author profile."
+
+[[endpoints]]
+id = "get_source"
+method = "GET"
+path = "/sources/{id}"
+rust_method = "get_source"
+response_type = "Source"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (S...)", "ISSN"]
+description = "Get a single publishing venue."
+
+[[endpoints]]
+id = "get_institution"
+method = "GET"
+path = "/institutions/{id}"
+rust_method = "get_institution"
+response_type = "Institution"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (I...)", "ROR"]
+description = "Get a single research institution."
+
+[[endpoints]]
+id = "get_topic"
+method = "GET"
+path = "/topics/{id}"
+rust_method = "get_topic"
+response_type = "Topic"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (T...)"]
+description = "Get a single research topic."
+
+[[endpoints]]
+id = "get_publisher"
+method = "GET"
+path = "/publishers/{id}"
+rust_method = "get_publisher"
+response_type = "Publisher"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (P...)"]
+description = "Get a single publisher."
+
+[[endpoints]]
+id = "get_funder"
+method = "GET"
+path = "/funders/{id}"
+rust_method = "get_funder"
+response_type = "Funder"
+param_struct = "GetParams"
+path_params = ["id"]
+id_formats = ["OpenAlex ID (F...)"]
+description = "Get a single funder."
+
+# ── Autocomplete Endpoints ──────────────────────────────────────────────
+
+[[endpoints]]
+id = "autocomplete_works"
+method = "GET"
+path = "/autocomplete/works"
+rust_method = "autocomplete_works"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for works. Searches titles. Hint shows first author name."
+
+[[endpoints]]
+id = "autocomplete_authors"
+method = "GET"
+path = "/autocomplete/authors"
+rust_method = "autocomplete_authors"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for authors. Searches display names. Hint shows last known institution."
+
+[[endpoints]]
+id = "autocomplete_sources"
+method = "GET"
+path = "/autocomplete/sources"
+rust_method = "autocomplete_sources"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for sources (journals, repositories). Hint shows host organization."
+
+[[endpoints]]
+id = "autocomplete_institutions"
+method = "GET"
+path = "/autocomplete/institutions"
+rust_method = "autocomplete_institutions"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for institutions. Hint shows city and country."
+
+[[endpoints]]
+id = "autocomplete_concepts"
+method = "GET"
+path = "/autocomplete/concepts"
+rust_method = "autocomplete_concepts"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for concepts (deprecated entity type, but autocomplete still works)."
+
+[[endpoints]]
+id = "autocomplete_publishers"
+method = "GET"
+path = "/autocomplete/publishers"
+rust_method = "autocomplete_publishers"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for publishers. Hint shows country."
+
+[[endpoints]]
+id = "autocomplete_funders"
+method = "GET"
+path = "/autocomplete/funders"
+rust_method = "autocomplete_funders"
+response_type = "AutocompleteResponse"
+query_params = ["q"]
+description = "Autocomplete for funders. Hint shows country and description."
+
+# ── Semantic Search Endpoints ───────────────────────────────────────────
+
+[[endpoints]]
+id = "find_works_get"
+method = "GET"
+path = "/find/works"
+rust_method = "find_works"
+response_type = "FindWorksResponse"
+param_struct = "FindWorksParams"
+description = "Semantic search for works via GET. Requires API key. 1,000 credits/request."
+
+[[endpoints]]
+id = "find_works_post"
+method = "POST"
+path = "/find/works"
+rust_method = "find_works_post"
+response_type = "FindWorksResponse"
+param_struct = "FindWorksParams"
+description = "Semantic search for works via POST. Query in JSON body. Requires API key."
+
+# ── Parameters ──────────────────────────────────────────────────────────
+
+[params.ListParams]
+description = "Query parameters shared by all 7 list endpoints."
+
+[[params.ListParams.fields]]
+name = "filter"
+type = "Option<String>"
+query_key = "filter"
+description = "Filter expression. Comma-separated AND conditions, pipe for OR."
+
+[[params.ListParams.fields]]
+name = "search"
+type = "Option<String>"
+query_key = "search"
+description = "Full-text search across title, abstract, and fulltext."
+
+[[params.ListParams.fields]]
+name = "sort"
+type = "Option<String>"
+query_key = "sort"
+description = "Sort field + optional direction. e.g. 'cited_by_count:desc'."
+
+[[params.ListParams.fields]]
+name = "per_page"
+type = "Option<u32>"
+query_key = "per-page"
+description = "Results per page (1-200, default 25). Note: query key is 'per-page' (hyphenated)."
+
+[[params.ListParams.fields]]
+name = "page"
+type = "Option<u32>"
+query_key = "page"
+description = "Page number for offset pagination. Max page * per_page <= 10,000."
+
+[[params.ListParams.fields]]
+name = "cursor"
+type = "Option<String>"
+query_key = "cursor"
+description = "Cursor-based pagination. Start with '*', then pass meta.next_cursor."
+
+[[params.ListParams.fields]]
+name = "sample"
+type = "Option<u32>"
+query_key = "sample"
+description = "Return a random sample of this many results."
+
+[[params.ListParams.fields]]
+name = "seed"
+type = "Option<u32>"
+query_key = "seed"
+description = "Seed for reproducible random sampling. Only meaningful with sample."
+
+[[params.ListParams.fields]]
+name = "select"
+type = "Option<String>"
+query_key = "select"
+description = "Comma-separated list of fields to include in response."
+
+[[params.ListParams.fields]]
+name = "group_by"
+type = "Option<String>"
+query_key = "group_by"
+description = "Aggregate results by a field and return counts."
+
+[params.GetParams]
+description = "Query parameters for single-entity GET endpoints."
+
+[[params.GetParams.fields]]
+name = "select"
+type = "Option<String>"
+query_key = "select"
+description = "Comma-separated list of fields to include in response."
+
+[params.FindWorksParams]
+description = "Parameters for semantic search (/find/works). Requires API key."
+
+[[params.FindWorksParams.fields]]
+name = "query"
+type = "String"
+required = true
+query_key = "query"
+description = "Text to find similar works for. Max 10,000 characters."
+
+[[params.FindWorksParams.fields]]
+name = "count"
+type = "Option<u32>"
+query_key = "count"
+description = "Number of results to return (1-100, default 25)."
+
+[[params.FindWorksParams.fields]]
+name = "filter"
+type = "Option<String>"
+query_key = "filter"
+description = "Filter expression to constrain results."
+
+# ── Known API Quirks (verified 2026-02-16) ──────────────────────────────
+# These are deviations from the documented API that were discovered during
+# implementation by testing against the live API.
+
+# 1. `mag` fields in WorkIds, SourceIds, InstitutionIds are returned as
+#    strings (e.g. "2741809807"), not integers as one might expect.
+#    Rust type: Option<String>, not Option<i64>.
+
+# 2. `host_organization_lineage` arrays (in Source and DehydratedSource)
+#    can contain null elements, e.g. [null]. Use Option<Vec<Option<String>>>
+#    instead of Option<Vec<String>>.
+
+# 3. The /autocomplete/publishers endpoint has been observed returning
+#    HTTP 500 errors intermittently (server-side issue, not client bug).
