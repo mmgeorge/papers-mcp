@@ -11,8 +11,8 @@ alternative to proprietary databases like Scopus and Web of Science.
 
 | Crate | Description |
 |-------|-------------|
-| [`openalex`](crates/openalex/) | Typed Rust client for the OpenAlex REST API. Handles pagination, autocomplete, and semantic search. |
-| [`papers`](crates/papers/) | Shared library consumed by both the MCP server and CLI. Some deviations from the `openalex` which it wraps. |
+| [`papers-openalex`](crates/papers-openalex/) | Typed Rust client for the OpenAlex REST API. Handles pagination, autocomplete, and semantic search. |
+| [`papers`](crates/papers/) | Shared library consumed by both the MCP server and CLI. Some deviations from `papers-openalex` which it wraps. |
 | [`papers-mcp`](crates/papers-mcp/) | MCP server exposing tools for searching and retrieving entities. |
 | [`papers-cli`](crates/papers-cli/) | CLI binary (`papers`). Same tools as the MCP server, with human-readable or JSON output. |
 

@@ -14,7 +14,7 @@
 ///
 /// ```no_run
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// use openalex::{OpenAlexClient, GetParams, OpenAlexError};
+/// use papers_openalex::{OpenAlexClient, GetParams, OpenAlexError};
 ///
 /// let client = OpenAlexClient::new();
 /// match client.get_work("nonexistent", &GetParams::default()).await {

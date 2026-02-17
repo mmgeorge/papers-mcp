@@ -4,7 +4,7 @@
 /// Supports both struct-update syntax and the bon builder pattern:
 ///
 /// ```
-/// use openalex::ListParams;
+/// use papers_openalex::ListParams;
 ///
 /// // Struct-update syntax
 /// let params = ListParams {
@@ -144,7 +144,7 @@ impl ListParams {
 /// supported.
 ///
 /// ```
-/// use openalex::GetParams;
+/// use papers_openalex::GetParams;
 ///
 /// // No field selection (return full entity)
 /// let params = GetParams::default();
@@ -178,7 +178,7 @@ impl GetParams {
 /// request.
 ///
 /// ```
-/// use openalex::FindWorksParams;
+/// use papers_openalex::FindWorksParams;
 ///
 /// let params = FindWorksParams::builder()
 ///     .query("machine learning for drug discovery")

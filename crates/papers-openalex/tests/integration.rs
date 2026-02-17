@@ -1,4 +1,4 @@
-use openalex::{GetParams, ListParams, OpenAlexClient};
+use papers_openalex::{GetParams, ListParams, OpenAlexClient};
 
 fn client() -> OpenAlexClient {
     OpenAlexClient::new()
@@ -230,7 +230,7 @@ async fn test_live_find_works() {
         eprintln!("Skipping find_works test: OPENALEX_KEY not set");
         return;
     }
-    let params = openalex::FindWorksParams::builder()
+    let params = papers_openalex::FindWorksParams::builder()
         .query("machine learning for drug discovery")
         .count(2)
         .build();

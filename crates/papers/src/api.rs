@@ -1,4 +1,4 @@
-use openalex::{
+use papers_openalex::{
     Author, AutocompleteResponse, FindWorksParams, FindWorksResponse, Funder, GetParams,
     Institution, ListParams, OpenAlexClient, OpenAlexError, Publisher, Source, Topic, Work,
 };

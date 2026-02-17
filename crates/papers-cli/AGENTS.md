@@ -14,7 +14,7 @@ tests/
   cli.rs       — wiremock integration tests (format output + slim JSON assertions)
 ```
 
-Imports only `papers::*` — no direct dependency on `openalex`.
+Imports only `papers::*` — no direct dependency on `papers-openalex`.
 
 ## CLI commands (22 total)
 
@@ -67,6 +67,6 @@ Do not call the API if the key is missing.
 
 ## Key gotchas
 
-- Do NOT add `openalex` as a direct dependency — use `papers::*` only
+- Do NOT add `papers-openalex` as a direct dependency — use `papers::*` only
 - `FindWorksParams` builder uses consumed-builder pattern for optional fields:
   use intermediate `let mut builder = ...` + `if let Some(v) = opt { builder = builder.field(v); }`

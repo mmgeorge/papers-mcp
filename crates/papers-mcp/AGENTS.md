@@ -1,6 +1,6 @@
 # papers-mcp
 
-MCP server wrapping the `papers` crate (which wraps `openalex`), built with `rmcp` v0.15.
+MCP server wrapping the `papers` crate (which wraps `papers-openalex`), built with `rmcp` v0.15.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ tests/
 The `papers` crate (at `../papers`) owns all business logic:
 - Slim summary structs for list responses
 - 22 async API wrapper functions
-- Re-exports of all `openalex` types
+- Re-exports of all `papers-openalex` types
 
 `papers-mcp` only contains the MCP layer (rmcp macros, parameter structs, JSON serialization).
 See `../papers/CHANGES.md` for how responses differ from the raw OpenAlex API.
@@ -30,7 +30,7 @@ See `../papers/CHANGES.md` for how responses differ from the raw OpenAlex API.
 - `#[tool_handler]` on the `ServerHandler` impl generates `call_tool`, `list_tools`, `get_tool`
 - Each tool method takes `Parameters<T>` and returns `Result<String, String>`
 - Success: JSON-serialized API response. Error: error message string.
-- All 22 tools delegate to `papers::api::*` functions (no direct openalex imports)
+- All 22 tools delegate to `papers::api::*` functions (no direct papers-openalex imports)
 - List tools return slim `SlimListResponse<XxxSummary>` via `papers::api::*_list()`
 - Get/autocomplete/find tools return full entities via `papers::api::*_get/autocomplete/find()`
 
@@ -42,7 +42,7 @@ See `../papers/CHANGES.md` for how responses differ from the raw OpenAlex API.
 - `AutocompleteToolParams` — required `q`
 - `FindWorksToolParams` — required `query`, optional `count` and `filter`
 
-Each has a conversion method to the corresponding `papers`/`openalex` params type.
+Each has a conversion method to the corresponding `papers`/`papers-openalex` params type.
 
 ## How to update
 
@@ -61,7 +61,7 @@ When `rmcp` updates:
 
 - `rmcp` requires `Clone` on the service struct (PapersMcp)
 - `rmcp` uses `schemars` v1 (not v0.8) — must match versions
-- All openalex types come from `papers::*` — do NOT add `openalex` as a direct dep
+- All papers-openalex types come from `papers::*` — do NOT add `papers-openalex` as a direct dep
 - The `#[tool]` macro transforms async fns — they return `Pin<Box<dyn Future>>`, not regular futures
 - `tool_router` visibility must be set via `#[tool_router(vis = "pub")]` for external access
 - Tool methods need `pub` visibility to be testable from integration tests

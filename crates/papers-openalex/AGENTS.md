@@ -63,8 +63,8 @@ Add/modify endpoints, parameters, entity fields, or enum values in the TOML spec
 ### Step 5: Update tests
 - Add/update fixtures in `tests/fixtures/`
 - Add integration tests in `tests/integration.rs`
-- Run `cargo test -p openalex` (unit + mock tests)
-- Run `cargo test -p openalex -- --ignored` (live API tests)
+- Run `cargo test -p papers-openalex` (unit + mock tests)
+- Run `cargo test -p papers-openalex -- --ignored` (live API tests)
 
 ## Key Gotchas
 

@@ -7,8 +7,8 @@
 //! # Quick start
 //!
 //! ```no_run
-//! # async fn example() -> openalex::Result<()> {
-//! use openalex::{OpenAlexClient, ListParams};
+//! # async fn example() -> papers_openalex::Result<()> {
+//! use papers_openalex::{OpenAlexClient, ListParams};
 //!
 //! let client = OpenAlexClient::new();
 //!
@@ -32,7 +32,7 @@
 //! limits. Set the `OPENALEX_KEY` environment variable, or pass it explicitly:
 //!
 //! ```no_run
-//! use openalex::OpenAlexClient;
+//! use papers_openalex::OpenAlexClient;
 //!
 //! // Reads OPENALEX_KEY from environment
 //! let client = OpenAlexClient::new();

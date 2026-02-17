@@ -1,7 +1,7 @@
 pub mod api;
 pub mod summary;
 
-pub use openalex::{
+pub use papers_openalex::{
     Author, Funder, Institution, Publisher, Source, Topic, Work,
     OpenAlexClient, OpenAlexError, Result,
     ListParams, GetParams, FindWorksParams,

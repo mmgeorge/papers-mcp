@@ -1,5 +1,5 @@
-use openalex::{Author, Funder, Institution, ListMeta, ListResponse, Publisher, Source, Topic, Work};
-use openalex::OpenAlexError;
+use papers_openalex::{Author, Funder, Institution, ListMeta, ListResponse, Publisher, Source, Topic, Work};
+use papers_openalex::OpenAlexError;
 use serde::Serialize;
 
 /// Slim wrapper returned by all list functions — keeps meta but drops group_by

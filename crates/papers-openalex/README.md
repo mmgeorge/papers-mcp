@@ -1,4 +1,4 @@
-# openalex
+# papers-openalex
 
 Async Rust client for the [OpenAlex REST API](https://docs.openalex.org).
 
@@ -7,10 +7,10 @@ OpenAlex is a free, open catalog of scholarly research: 240M+ works, 110M+ autho
 ## Quick start
 
 ```rust
-use openalex::{OpenAlexClient, ListParams};
+use papers_openalex::{OpenAlexClient, ListParams};
 
 #[tokio::main]
-async fn main() -> openalex::Result<()> {
+async fn main() -> papers_openalex::Result<()> {
     let client = OpenAlexClient::new();
 
     let params = ListParams::builder()
@@ -32,7 +32,7 @@ async fn main() -> openalex::Result<()> {
 Set the `OPENALEX_KEY` environment variable, or pass the key explicitly. Optional for most endpoints; recommended for higher rate limits.
 
 ```rust
-use openalex::OpenAlexClient;
+use papers_openalex::OpenAlexClient;
 
 let client = OpenAlexClient::new();                       // reads OPENALEX_KEY from env
 let client = OpenAlexClient::with_api_key("your-key");    // explicit key
@@ -171,6 +171,6 @@ Plus `find_works` / `find_works_post` for AI semantic search (requires API key, 
 ## Testing
 
 ```sh
-cargo test -p openalex
-cargo test -p openalex -- --ignored  # integration tests
+cargo test -p papers-openalex
+cargo test -p papers-openalex -- --ignored  # integration tests
 ```

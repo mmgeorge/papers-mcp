@@ -14,7 +14,7 @@ const DEFAULT_BASE_URL: &str = "https://api.openalex.org";
 /// # Creating a client
 ///
 /// ```no_run
-/// use openalex::OpenAlexClient;
+/// use papers_openalex::OpenAlexClient;
 ///
 /// // Reads API key from OPENALEX_KEY env var (optional but recommended)
 /// let client = OpenAlexClient::new();
@@ -26,8 +26,8 @@ const DEFAULT_BASE_URL: &str = "https://api.openalex.org";
 /// # Example: search and paginate
 ///
 /// ```no_run
-/// # async fn example() -> openalex::Result<()> {
-/// use openalex::{OpenAlexClient, ListParams};
+/// # async fn example() -> papers_openalex::Result<()> {
+/// use papers_openalex::{OpenAlexClient, ListParams};
 ///
 /// let client = OpenAlexClient::new();
 /// let params = ListParams::builder()
@@ -50,8 +50,8 @@ const DEFAULT_BASE_URL: &str = "https://api.openalex.org";
 /// # Example: cursor pagination
 ///
 /// ```no_run
-/// # async fn example() -> openalex::Result<()> {
-/// use openalex::{OpenAlexClient, ListParams};
+/// # async fn example() -> papers_openalex::Result<()> {
+/// use papers_openalex::{OpenAlexClient, ListParams};
 ///
 /// let client = OpenAlexClient::new();
 /// let mut cursor = Some("*".to_string());
@@ -91,7 +91,7 @@ impl OpenAlexClient {
     /// recommended for higher rate limits.
     ///
     /// ```no_run
-    /// use openalex::OpenAlexClient;
+    /// use papers_openalex::OpenAlexClient;
     /// let client = OpenAlexClient::new();
     /// ```
     pub fn new() -> Self {
@@ -105,7 +105,7 @@ impl OpenAlexClient {
     /// Create a new client with an explicit API key.
     ///
     /// ```no_run
-    /// use openalex::OpenAlexClient;
+    /// use papers_openalex::OpenAlexClient;
     /// let client = OpenAlexClient::with_api_key("your-key-here");
     /// ```
     pub fn with_api_key(api_key: impl Into<String>) -> Self {
@@ -119,7 +119,7 @@ impl OpenAlexClient {
     /// Override the base URL. Useful for testing with a mock server.
     ///
     /// ```no_run
-    /// use openalex::OpenAlexClient;
+    /// use papers_openalex::OpenAlexClient;
     /// let client = OpenAlexClient::new()
     ///     .with_base_url("http://localhost:8080");
     /// ```
@@ -216,8 +216,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -244,8 +244,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -274,8 +274,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -300,8 +300,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -329,8 +329,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -354,8 +354,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -379,8 +379,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, ListParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, ListParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let params = ListParams::builder()
@@ -410,8 +410,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     ///
@@ -442,8 +442,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let author = client.get_author("A5023888391", &GetParams::default()).await?;
@@ -468,8 +468,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let source = client.get_source("S137773608", &GetParams::default()).await?;
@@ -493,8 +493,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let inst = client.get_institution("I136199984", &GetParams::default()).await?;
@@ -518,8 +518,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let topic = client.get_topic("T10001", &GetParams::default()).await?;
@@ -543,8 +543,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let publisher = client.get_publisher("P4310319965", &GetParams::default()).await?;
@@ -568,8 +568,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, GetParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, GetParams};
     ///
     /// let client = OpenAlexClient::new();
     /// let funder = client.get_funder("F4320332161", &GetParams::default()).await?;
@@ -594,8 +594,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_works("machine learning").await?;
@@ -619,8 +619,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_authors("einstein").await?;
@@ -644,8 +644,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_sources("nature").await?;
@@ -669,8 +669,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_institutions("harvard").await?;
@@ -693,8 +693,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_concepts("physics").await?;
@@ -720,8 +720,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_publishers("elsevier").await?;
@@ -744,8 +744,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::OpenAlexClient;
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::OpenAlexClient;
     ///
     /// let client = OpenAlexClient::new();
     /// let response = client.autocomplete_funders("national science").await?;
@@ -771,8 +771,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, FindWorksParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, FindWorksParams};
     ///
     /// let client = OpenAlexClient::with_api_key("your-key");
     /// let params = FindWorksParams::builder()
@@ -803,8 +803,8 @@ impl OpenAlexClient {
     /// # Example
     ///
     /// ```no_run
-    /// # async fn example() -> openalex::Result<()> {
-    /// use openalex::{OpenAlexClient, FindWorksParams};
+    /// # async fn example() -> papers_openalex::Result<()> {
+    /// use papers_openalex::{OpenAlexClient, FindWorksParams};
     ///
     /// let client = OpenAlexClient::with_api_key("your-key");
     /// let long_query = "A very long research question or abstract text...";

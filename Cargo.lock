@@ -984,19 +984,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "openalex"
-version = "0.1.0"
-dependencies = [
- "bon",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "wiremock",
-]
-
-[[package]]
 name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1006,7 +993,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 name = "papers"
 version = "0.1.0"
 dependencies = [
- "openalex",
+ "papers-openalex",
  "serde",
  "serde_json",
  "tokio",
@@ -1034,6 +1021,19 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
+name = "papers-openalex"
+version = "0.1.0"
+dependencies = [
+ "bon",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "wiremock",
 ]

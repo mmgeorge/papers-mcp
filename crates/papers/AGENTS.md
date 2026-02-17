@@ -1,17 +1,17 @@
 # papers
 
-Shared Rust library that wraps the `openalex` crate with business logic: slim summary
+Shared Rust library that wraps the `papers-openalex` crate with business logic: slim summary
 structs for list responses, 22 async API wrapper functions, and re-exports of all
-`openalex` types that consumers need.
+`papers-openalex` types that consumers need.
 
-Neither `papers-mcp` nor `papers-cli` import `openalex` directly — they get everything
+Neither `papers-mcp` nor `papers-cli` import `papers-openalex` directly — they get everything
 via `papers::*`.
 
 ## Architecture
 
 ```
 src/
-  lib.rs       — pub mod declarations + re-exports from openalex
+  lib.rs       — pub mod declarations + re-exports from papers-openalex
   summary.rs   — 7 slim summary structs + From<FullEntity> impls + SlimListResponse
   api.rs       — 22 async wrapper functions (7 list, 7 get, 7 autocomplete, 1 find)
 tests/
@@ -47,11 +47,11 @@ See `CHANGES.md` for exactly which fields are kept and why.
 
 ### lib.rs re-exports
 
-Re-exports everything consumers need from `openalex` so neither `papers-mcp` nor
-`papers-cli` need to declare a direct dependency on `openalex`:
+Re-exports everything consumers need from `papers-openalex` so neither `papers-mcp` nor
+`papers-cli` need to declare a direct dependency on `papers-openalex`:
 
 ```rust
-pub use openalex::{
+pub use papers_openalex::{
     Author, Funder, Institution, Publisher, Source, Topic, Work,
     OpenAlexClient, OpenAlexError, Result,
     ListParams, GetParams, FindWorksParams,
@@ -73,9 +73,9 @@ pub use summary::SlimListResponse;
 
 ## Key notes
 
-- The `openalex` crate is not re-exported as a module — only specific items are
+- The `papers-openalex` crate is not re-exported as a module — only specific items are
   re-exported. Consumers should use `papers::OpenAlexClient`, not
-  `papers::openalex::OpenAlexClient`.
+  `papers::papers_openalex::OpenAlexClient`.
 - All `api.rs` functions take `&OpenAlexClient` (not `self`) so they are plain
   async functions usable from any context.
 - `summary_list_result` is `pub(crate)` within `summary.rs` — it is an internal

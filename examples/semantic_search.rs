@@ -1,7 +1,7 @@
-use openalex::{OpenAlexClient, FindWorksParams};
+use papers_openalex::{OpenAlexClient, FindWorksParams};
 
 #[tokio::main]
-async fn main() -> openalex::Result<()> {
+async fn main() -> papers_openalex::Result<()> {
     let client = OpenAlexClient::new();
 
     let params = FindWorksParams::builder()
