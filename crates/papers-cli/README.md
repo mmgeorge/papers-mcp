@@ -12,7 +12,9 @@ cargo install --path crates/papers-cli
 ## Usage
 
 ```
-papers <COMMAND>
+Query the OpenAlex academic research database
+
+Usage: papers <COMMAND>
 
 Commands:
   work         Scholarly works: articles, preprints, datasets, and more
@@ -36,21 +38,62 @@ Every command accepts `--json` to output raw JSON instead of formatted text.
 ### Listing
 
 ```
-papers work list [OPTIONS]
+List works with optional search/filter/sort
+
+Usage: papers work list [OPTIONS]
 
 Options:
-  -s, --search <SEARCH>      Full-text search query
-  -f, --filter <FILTER>      Filter expression (e.g. "publication_year:2024,is_oa:true")
-      --sort <SORT>          Sort field with optional :desc (e.g. "cited_by_count:desc")
-  -n, --per-page <PER_PAGE>  Results per page [default: 10]
-      --page <PAGE>          Page number for offset pagination
-      --cursor <CURSOR>      Cursor for cursor-based pagination (use "*" to start)
-      --sample <SAMPLE>      Random sample of N results
-      --seed <SEED>          Seed for reproducible sampling
-      --json                 Output raw JSON
+  -s, --search <SEARCH>            Full-text search query
+  -f, --filter <FILTER>            Filter expression (comma-separated AND conditions, pipe for OR)
+      --sort <SORT>                Sort field with optional :desc (e.g. "cited_by_count:desc")
+  -n, --per-page <PER_PAGE>        Results per page [default: 10]
+      --page <PAGE>                Page number for offset pagination
+      --cursor <CURSOR>            Cursor for cursor-based pagination (use "*" to start)
+      --sample <SAMPLE>            Random sample of N results
+      --seed <SEED>                Seed for reproducible sampling
+      --json                       Output raw JSON instead of formatted text
+      --author <AUTHOR>            Filter by author name or OpenAlex author ID
+      --topic <TOPIC>              Filter by topic name or OpenAlex topic ID
+      --domain <DOMAIN>            Filter by domain name or ID
+      --field <FIELD>              Filter by field name or ID
+      --subfield <SUBFIELD>        Filter by subfield name or ID
+      --publisher <PUBLISHER>      Filter by publisher name or ID
+      --source <SOURCE>            Filter by source (journal/conference) name or ID
+      --institution <INSTITUTION>  Filter by institution name or ID
+      --year <YEAR>                Filter by publication year (e.g. "2024", ">2008", "2008-2024")
+      --citations <CITATIONS>      Filter by citation count (e.g. ">100", "10-50")
+      --country <COUNTRY>          Filter by country code of author institutions (e.g. "US", "GB")
+      --continent <CONTINENT>      Filter by continent of author institutions (e.g. "europe", "asia")
+      --type <ENTITY_TYPE>         Filter by work type (e.g. "article", "preprint", "dataset")
+      --open                       Filter for open access works only
+  -h, --help                       Print help
+
+Advanced filtering: https://docs.openalex.org/api-entities/works/filter-works
 ```
 
-`author`, `source`, `institution`, `topic`, `publisher`, and `funder` all share the same list options.
+In addition to the base options above, each entity has **filter aliases** — shorthand flags
+that resolve to OpenAlex filter expressions so you don't need to remember the raw syntax.
+See [Filter aliases](#filter-aliases) below.
+
+### Getting
+
+The `get` subcommand accepts **any of these as its argument**:
+
+- OpenAlex IDs: `W2741809807`, `A5028826050`, `https://openalex.org/W2741809807`
+- DOIs: `https://doi.org/10.7717/peerj.4375`, `10.7717/peerj.4375`
+- ORCIDs: `https://orcid.org/0000-0002-1825-0097`
+- ROR IDs: `https://ror.org/03vek6s52`
+- PubMed IDs: `pmid:12345678`
+- ISSNs: `0028-0836` (for sources)
+- Hierarchy IDs: `3` (domains), `17` (fields), `1702` (subfields)
+- **Search queries**: any other string is resolved to the top result by citation count
+
+```
+$ papers work get "attention is all you need"
+$ papers author get "yoshua bengio"
+$ papers source get "nature"
+$ papers institution get "MIT"
+```
 
 ## Examples
 
@@ -80,7 +123,27 @@ Found 1556581 results · page 1 (showing 3)
      ...
 ```
 
-### Filter and sort
+### Filter with aliases
+
+Instead of raw filter expressions, use shorthand flags:
+
+```
+$ papers work list --author "Yann LeCun" --year 2020-2024 --open -n 3
+$ papers work list --topic "deep learning" --citations ">100" --sort cited_by_count:desc
+$ papers work list --institution MIT --field "computer science" --year 2024
+$ papers author list --institution harvard --country US --h-index ">50"
+$ papers source list --publisher springer --type journal
+```
+
+Aliases can be combined with each other and with `--search`/`--filter`/`--sort`:
+
+```
+$ papers work list -s "transformer" --year 2024 --open --sort cited_by_count:desc -n 5
+```
+
+### Filter with raw expressions
+
+You can still use raw [OpenAlex filter syntax](https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists) via `--filter`:
 
 ```
 $ papers work list -f "publication_year:2024,is_oa:true" --sort cited_by_count:desc -n 3
@@ -123,7 +186,12 @@ Abstract:
   large-scale, up-to-date, and reproducible studies assessing the prevalence and characteristics of OA...
 ```
 
-You can also look up works by DOI: `papers work get https://doi.org/10.7717/peerj.4375`
+You can also look up works by DOI or search query:
+
+```
+$ papers work get https://doi.org/10.7717/peerj.4375
+$ papers work get "state of open access"
+```
 
 ### Author autocomplete
 
@@ -196,9 +264,82 @@ $ OPENALEX_KEY=<your-key> papers work find "transformer attention mechanism self
 Requires a [polite pool API key](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication)
 with semantic search credits enabled.
 
-## Filter syntax
+## Filter aliases
 
-Filters follow the [OpenAlex filter syntax](https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists):
+Shorthand flags that resolve to OpenAlex filter expressions. Entity-based aliases (like `--author`)
+accept either an OpenAlex ID or a search string that gets resolved to the top result by citation count.
+
+### `work list`
+
+| Flag | Example | Resolves to |
+|------|---------|-------------|
+| `--author` | `"einstein"`, `A5108093963` | `authorships.author.id:<id>` |
+| `--topic` | `"deep learning"`, `T10320` | `topics.id:<id>` |
+| `--domain` | `"physical sciences"`, `3` | `topics.domain.id:<id>` |
+| `--field` | `"computer science"`, `17` | `topics.field.id:<id>` |
+| `--subfield` | `"artificial intelligence"`, `1702` | `topics.subfield.id:<id>` |
+| `--publisher` | `"acm"`, `"acm\|ieee"` | `primary_location.source.publisher_lineage:<id>` |
+| `--source` | `"nature"`, `S137773608` | `primary_location.source.id:<id>` |
+| `--institution` | `"mit"`, `I136199984` | `authorships.institutions.lineage:<id>` |
+| `--year` | `2024`, `>2008`, `2008-2024` | `publication_year:<value>` |
+| `--citations` | `">100"`, `"10-50"` | `cited_by_count:<value>` |
+| `--country` | `US`, `GB` | `authorships.countries:<value>` |
+| `--continent` | `europe`, `asia` | `authorships.continents:<value>` |
+| `--type` | `article`, `preprint` | `type:<value>` |
+| `--open` | *(flag)* | `is_oa:true` |
+
+### `author list`
+
+| Flag | Example |
+|------|---------|
+| `--institution` | `"harvard"`, `"mit"`, `I136199984` |
+| `--country` | `US`, `GB` |
+| `--continent` | `europe`, `asia` |
+| `--citations` | `">1000"`, `"100-500"` |
+| `--works` | `">500"`, `"100-200"` |
+| `--h-index` | `">50"`, `"10-20"` |
+
+### `source list`
+
+| Flag | Example |
+|------|---------|
+| `--publisher` | `"springer"`, `P4310319798` |
+| `--country` | `US`, `GB` |
+| `--continent` | `europe` |
+| `--type` | `journal`, `repository`, `conference` |
+| `--open` | *(flag)* |
+| `--citations` | `">10000"` |
+| `--works` | `">100000"` |
+
+### `institution list`
+
+| Flag | Example |
+|------|---------|
+| `--country` | `US`, `GB` |
+| `--continent` | `europe`, `asia` |
+| `--type` | `education`, `healthcare`, `company` |
+| `--citations` | `">100000"` |
+| `--works` | `">100000"` |
+
+### `topic list`
+
+| Flag | Example |
+|------|---------|
+| `--domain` | `"life sciences"`, `3` |
+| `--field` | `"computer science"`, `17` |
+| `--subfield` | `"artificial intelligence"`, `1702` |
+| `--citations` | `">1000"` |
+| `--works` | `">1000"` |
+
+### Other entities
+
+`publisher list`, `funder list`, `field list`, `subfield list`, and `domain list` also support
+relevant subsets of `--country`, `--continent`, `--domain`, `--field`, `--citations`, and `--works`.
+
+## Raw filter syntax
+
+For cases not covered by aliases, use `-f`/`--filter` with the
+[OpenAlex filter syntax](https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists):
 
 | Example | Meaning |
 |---------|---------|
