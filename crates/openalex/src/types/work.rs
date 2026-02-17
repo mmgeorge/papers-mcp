@@ -1,7 +1,72 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
 use super::common::*;
+
+/// Replace `<sup>content</sup>` and `<sub>content</sub>` (with any attributes)
+/// with inline LaTeX `$^{content}$` and `$_{content}$`. A leading space before
+/// the opening tag is consumed so that e.g. `n <sup>2</sup>` becomes `n$^{2}$`.
+fn convert_math_tags(text: String) -> String {
+    let text = replace_tag(&text, "sup", '^');
+    replace_tag(&text, "sub", '_')
+}
+
+fn replace_tag(text: &str, tag: &str, latex_op: char) -> String {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(rel_start) = rest.find(&open) {
+        // Consume a trailing space from the already-emitted prefix, so that
+        // "n <sup>2</sup>" becomes "n$^{2}$" rather than "n $^{2}$".
+        let prefix = &rest[..rel_start];
+        let trimmed_prefix = prefix.strip_suffix(' ').unwrap_or(prefix);
+        result.push_str(trimmed_prefix);
+
+        let after_open = &rest[rel_start..];
+        // Skip to end of opening tag (past the '>').
+        let Some(gt) = after_open.find('>') else {
+            result.push_str(&rest[rel_start..]);
+            return result;
+        };
+        let content_start = rel_start + gt + 1;
+
+        // Find the closing tag.
+        let Some(close_rel) = rest[content_start..].find(&close) else {
+            result.push_str(&rest[rel_start..]);
+            return result;
+        };
+        let content = &rest[content_start..content_start + close_rel];
+
+        result.push('$');
+        result.push(latex_op);
+        result.push('{');
+        result.push_str(content);
+        result.push('}');
+        result.push('$');
+
+        rest = &rest[content_start + close_rel + close.len()..];
+    }
+    result.push_str(rest);
+    result
+}
+
+fn deserialize_abstract<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map: Option<HashMap<String, Vec<u32>>> = Option::deserialize(deserializer)?;
+    Ok(map.map(|index| {
+        let mut positions: Vec<(u32, String)> = index
+            .into_iter()
+            .flat_map(|(word, pos)| pos.into_iter().map(move |p| (p, word.clone())))
+            .collect();
+        positions.sort_by_key(|(p, _)| *p);
+        let raw = positions.into_iter().map(|(_, w)| w).collect::<Vec<_>>().join(" ");
+        convert_math_tags(raw)
+    }))
+}
 
 /// A scholarly work: an article, book, dataset, preprint, or other research
 /// output.
@@ -33,10 +98,9 @@ use super::common::*;
 ///
 /// # Abstract
 ///
-/// The abstract is stored as an inverted index in
-/// [`abstract_inverted_index`](Work::abstract_inverted_index): a
-/// `HashMap<String, Vec<u32>>` mapping each word to its position(s) in the
-/// abstract text. This format is more compact than storing the full text.
+/// [`abstract_text`](Work::abstract_text) contains the reconstructed abstract
+/// as a plain string. OpenAlex stores abstracts as an inverted index internally;
+/// this crate converts that to readable text automatically on deserialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Work {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/W2741809807"`).
@@ -187,10 +251,9 @@ pub struct Work {
     /// OpenAlex IDs of works related to this one (by topic similarity).
     pub related_works: Option<Vec<String>>,
 
-    /// Abstract stored as an inverted index: a map from each word to its
-    /// position(s) in the abstract text. Reconstruct the abstract by sorting
-    /// words by their positions.
-    pub abstract_inverted_index: Option<HashMap<String, Vec<u32>>>,
+    /// Abstract text, reconstructed from the OpenAlex inverted index format.
+    #[serde(rename = "abstract_inverted_index", deserialize_with = "deserialize_abstract", default)]
+    pub abstract_text: Option<String>,
 
     /// Citation and publication counts broken down by year.
     pub counts_by_year: Option<Vec<CountsByYear>>,
@@ -227,5 +290,45 @@ mod tests {
         if let Some(topics) = &work.topics {
             assert!(!topics.is_empty());
         }
+    }
+
+    #[test]
+    fn test_abstract_text_reconstructed() {
+        let json = include_str!("../../tests/fixtures/work.json");
+        let work: Work = serde_json::from_str(json).expect("Failed to deserialize Work");
+        let abstract_text = work.abstract_text.expect("abstract_text should be Some");
+        assert!(
+            abstract_text.starts_with("Despite growing interest in Open Access"),
+            "abstract should start with expected text, got: {abstract_text}"
+        );
+        assert!(
+            abstract_text.ends_with("policy and practice."),
+            "abstract should end with expected text, got: {abstract_text}"
+        );
+    }
+
+    #[test]
+    fn test_abstract_text_none_when_absent() {
+        let json = r#"{"id":"https://openalex.org/W1","display_name":"Test"}"#;
+        let work: Work = serde_json::from_str(json).expect("Failed to deserialize Work");
+        assert!(work.abstract_text.is_none());
+    }
+
+    #[test]
+    fn test_convert_math_tags() {
+        // sup: "n <sup ...>2</sup>" → "n$^{2}$"
+        let input = r#"sort n <sup xmlns:mml="http://www.w3.org/1998/Math/MathML">2</sup> elements"#.to_string();
+        let output = convert_math_tags(input);
+        assert_eq!(output, "sort n$^{2}$ elements");
+
+        // sub: "H <sub>2</sub> O" → "H$_{2}$ O"
+        let input = "H <sub>2</sub> O".to_string();
+        let output = convert_math_tags(input);
+        assert_eq!(output, "H$_{2}$ O");
+
+        // no tags: unchanged
+        let input = "plain text".to_string();
+        let output = convert_math_tags(input);
+        assert_eq!(output, "plain text");
     }
 }

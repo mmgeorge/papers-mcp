@@ -9,7 +9,12 @@
       "Bash(dir:*)",
       "Bash(find:*)",
       "WebFetch(domain:*)",
-      "WebSearch"
+      "WebSearch",
+      "mcp__papers-mcp__*"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "papers-mcp"
+  ]
 }
