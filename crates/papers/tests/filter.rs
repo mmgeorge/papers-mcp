@@ -1,4 +1,5 @@
-use papers::{OpenAlexClient, WorkFilterAliases};
+use papers::filter::{WorkFilterAliases, resolve_work_filters};
+use papers::OpenAlexClient;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -47,7 +48,7 @@ async fn test_resolve_author_search() {
         author: Some("einstein".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -77,7 +78,7 @@ async fn test_resolve_publisher_search() {
         publisher: Some("acm".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -104,7 +105,7 @@ async fn test_resolve_source_search() {
         source: Some("siggraph".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -131,7 +132,7 @@ async fn test_resolve_topic_search() {
         topic: Some("machine learning".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(result.as_deref(), Some("primary_topic.id:T11636"));
@@ -155,7 +156,7 @@ async fn test_resolve_domain_search() {
         domain: Some("physical".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -185,7 +186,7 @@ async fn test_resolve_field_search() {
         field: Some("computer science".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -215,7 +216,7 @@ async fn test_resolve_subfield_search() {
         subfield: Some("artificial intelligence".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -243,7 +244,7 @@ async fn test_resolve_mixed_id_and_search() {
         publisher: Some("acm|P4310320595".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None)
+    let result = resolve_work_filters(&client, &aliases, None)
         .await
         .unwrap();
     assert_eq!(
@@ -266,7 +267,7 @@ async fn test_resolve_not_found_error() {
         author: Some("nonexistent_person_xyz".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, None).await;
+    let result = resolve_work_filters(&client, &aliases, None).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("nonexistent_person_xyz"));
@@ -283,7 +284,7 @@ async fn test_resolve_overlap_error() {
         ..Default::default()
     };
     let result =
-        papers::resolve_work_filters(&client, &aliases, Some("publication_year:>2020")).await;
+        resolve_work_filters(&client, &aliases, Some("publication_year:>2020")).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("year"));
@@ -326,7 +327,7 @@ async fn test_resolve_all_aliases_combined() {
         citations: Some(">100".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, Some("is_oa:true"))
+    let result = resolve_work_filters(&client, &aliases, Some("is_oa:true"))
         .await
         .unwrap();
     let filter = result.unwrap();

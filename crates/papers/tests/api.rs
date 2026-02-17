@@ -1,5 +1,5 @@
 use papers::api;
-use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient};
+use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient, WorkListParams};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -205,7 +205,7 @@ async fn test_work_list_applies_summary() {
         .await;
 
     let client = make_client(&mock);
-    let result = api::work_list(&client, &ListParams::default()).await.unwrap();
+    let result = api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let json = serde_json::to_string(&result).unwrap();
 
     // Slim fields present
@@ -228,7 +228,7 @@ async fn test_work_list_abstract_preserved() {
         .await;
 
     let client = make_client(&mock);
-    let result = api::work_list(&client, &ListParams::default()).await.unwrap();
+    let result = api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let json = serde_json::to_string(&result).unwrap();
     assert!(json.contains("abstract_text"));
     assert!(json.contains("Hello world"));
@@ -244,7 +244,7 @@ async fn test_work_list_authors_extracted() {
         .await;
 
     let client = make_client(&mock);
-    let result = api::work_list(&client, &ListParams::default()).await.unwrap();
+    let result = api::work_list(&client, &WorkListParams::default()).await.unwrap();
     assert_eq!(result.results[0].authors, vec!["Alice"]);
 }
 
@@ -258,7 +258,7 @@ async fn test_work_list_drops_group_by() {
         .await;
 
     let client = make_client(&mock);
-    let result = api::work_list(&client, &ListParams::default()).await.unwrap();
+    let result = api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let json = serde_json::to_string(&result).unwrap();
     assert!(!json.contains("group_by"));
 }

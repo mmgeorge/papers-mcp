@@ -1,4 +1,4 @@
-use papers::{GetParams, ListParams, OpenAlexClient};
+use papers::{GetParams, ListParams, OpenAlexClient, WorkListParams};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -342,7 +342,7 @@ async fn test_work_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::work_list(&client, &ListParams::default()).await.unwrap();
+    let result = papers::api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let text = papers_cli_format::format_work_list(&result);
 
     assert!(text.contains("Bitonic Sort"));
@@ -361,7 +361,7 @@ async fn test_work_list_json() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::work_list(&client, &ListParams::default()).await.unwrap();
+    let result = papers::api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let json = serde_json::to_string(&result).unwrap();
 
     assert!(json.contains("Bitonic Sort"));
@@ -806,12 +806,10 @@ async fn test_work_list_year_flag() {
         .await;
 
     let client = make_client(&mock);
-    let aliases = papers::WorkFilterAliases {
+    let params = WorkListParams {
         year: Some(">2020".to_string()),
         ..Default::default()
     };
-    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
-    let params = ListParams { filter: resolved, ..Default::default() };
     let result = papers::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
@@ -827,12 +825,10 @@ async fn test_work_list_citations_flag() {
         .await;
 
     let client = make_client(&mock);
-    let aliases = papers::WorkFilterAliases {
+    let params = WorkListParams {
         citations: Some(">100".to_string()),
         ..Default::default()
     };
-    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
-    let params = ListParams { filter: resolved, ..Default::default() };
     let result = papers::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
@@ -848,12 +844,10 @@ async fn test_work_list_author_id_flag() {
         .await;
 
     let client = make_client(&mock);
-    let aliases = papers::WorkFilterAliases {
+    let params = WorkListParams {
         author: Some("A5083138872".to_string()),
         ..Default::default()
     };
-    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
-    let params = ListParams { filter: resolved, ..Default::default() };
     let result = papers::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
@@ -878,12 +872,10 @@ async fn test_work_list_publisher_search_flag() {
         .await;
 
     let client = make_client(&mock);
-    let aliases = papers::WorkFilterAliases {
+    let params = WorkListParams {
         publisher: Some("acm".to_string()),
         ..Default::default()
     };
-    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
-    let params = ListParams { filter: resolved, ..Default::default() };
     let result = papers::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
@@ -899,12 +891,11 @@ async fn test_work_list_combined_filter_and_year() {
         .await;
 
     let client = make_client(&mock);
-    let aliases = papers::WorkFilterAliases {
+    let params = WorkListParams {
         year: Some("2024".to_string()),
+        filter: Some("is_oa:true".to_string()),
         ..Default::default()
     };
-    let resolved = papers::resolve_work_filters(&client, &aliases, Some("is_oa:true")).await.unwrap();
-    let params = ListParams { filter: resolved, ..Default::default() };
     let result = papers::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
@@ -912,13 +903,14 @@ async fn test_work_list_combined_filter_and_year() {
 #[tokio::test]
 async fn test_work_list_overlap_error() {
     let client = OpenAlexClient::new();
-    let aliases = papers::WorkFilterAliases {
+    let params = WorkListParams {
         year: Some("2024".to_string()),
+        filter: Some("publication_year:>2020".to_string()),
         ..Default::default()
     };
-    let result = papers::resolve_work_filters(&client, &aliases, Some("publication_year:>2020")).await;
+    let result = papers::api::work_list(&client, &params).await;
     assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
+    let err = result.err().unwrap().to_string();
     assert!(err.contains("year"));
     assert!(err.contains("publication_year"));
 }

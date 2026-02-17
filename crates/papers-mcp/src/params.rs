@@ -134,8 +134,8 @@ pub struct WorkListToolParams {
 }
 
 impl WorkListToolParams {
-    pub fn into_list_params(&self) -> papers::ListParams {
-        papers::ListParams {
+    pub fn into_work_list_params(&self) -> papers::WorkListParams {
+        papers::WorkListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -146,11 +146,6 @@ impl WorkListToolParams {
             seed: self.seed,
             select: self.select.clone(),
             group_by: self.group_by.clone(),
-        }
-    }
-
-    pub fn into_work_filter_aliases(&self) -> papers::WorkFilterAliases {
-        papers::WorkFilterAliases {
             author: self.author.clone(),
             topic: self.topic.clone(),
             domain: self.domain.clone(),

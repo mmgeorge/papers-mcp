@@ -1,5 +1,66 @@
 use papers_openalex::{ListParams, OpenAlexClient, OpenAlexError};
 
+/// Combined parameters for `work_list`, including both standard list parameters
+/// and shorthand filter aliases.
+///
+/// Standard list fields (`filter`, `search`, `sort`, etc.) work like `ListParams`.
+/// Alias fields (`author`, `topic`, `year`, etc.) are resolved to OpenAlex filter
+/// expressions — ID values pass through, search strings are resolved to the top
+/// result by citation count.
+#[derive(Debug, Default, Clone)]
+pub struct WorkListParams {
+    // ── Standard list parameters ─────────────────────────────────────
+    pub filter: Option<String>,
+    pub search: Option<String>,
+    pub sort: Option<String>,
+    pub per_page: Option<u32>,
+    pub page: Option<u32>,
+    pub cursor: Option<String>,
+    pub sample: Option<u32>,
+    pub seed: Option<u32>,
+    pub select: Option<String>,
+    pub group_by: Option<String>,
+    // ── Filter aliases ───────────────────────────────────────────────
+    pub author: Option<String>,
+    pub topic: Option<String>,
+    pub domain: Option<String>,
+    pub field: Option<String>,
+    pub subfield: Option<String>,
+    pub publisher: Option<String>,
+    pub source: Option<String>,
+    pub year: Option<String>,
+    pub citations: Option<String>,
+}
+
+impl WorkListParams {
+    pub(crate) fn into_aliases_and_list_params(&self) -> (WorkFilterAliases, ListParams) {
+        let aliases = WorkFilterAliases {
+            author: self.author.clone(),
+            topic: self.topic.clone(),
+            domain: self.domain.clone(),
+            field: self.field.clone(),
+            subfield: self.subfield.clone(),
+            publisher: self.publisher.clone(),
+            source: self.source.clone(),
+            year: self.year.clone(),
+            citations: self.citations.clone(),
+        };
+        let list_params = ListParams {
+            filter: self.filter.clone(),
+            search: self.search.clone(),
+            sort: self.sort.clone(),
+            per_page: self.per_page,
+            page: self.page,
+            cursor: self.cursor.clone(),
+            sample: self.sample,
+            seed: self.seed,
+            select: self.select.clone(),
+            group_by: self.group_by.clone(),
+        };
+        (aliases, list_params)
+    }
+}
+
 /// Alias fields for work list filters.
 ///
 /// Each field maps to a specific OpenAlex filter key. ID-based fields accept

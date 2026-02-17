@@ -2,7 +2,7 @@ pub mod api;
 pub mod filter;
 pub mod summary;
 
-pub use filter::{FilterError, WorkFilterAliases, resolve_work_filters};
+pub use filter::{FilterError, WorkListParams};
 pub use papers_openalex::{
     Author, Domain, Field, Funder, HierarchyEntity, HierarchyIds, Institution, Publisher, Source,
     Subfield, Topic, Work,

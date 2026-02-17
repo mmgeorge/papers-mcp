@@ -4,6 +4,7 @@ use papers_openalex::{
     Topic, Work,
 };
 
+use crate::filter::{FilterError, WorkListParams, resolve_work_filters};
 use crate::summary::{
     AuthorSummary, DomainSummary, FieldSummary, FunderSummary, InstitutionSummary,
     PublisherSummary, SlimListResponse, SourceSummary, SubfieldSummary, TopicSummary, WorkSummary,
@@ -14,9 +15,11 @@ use crate::summary::{
 
 pub async fn work_list(
     client: &OpenAlexClient,
-    params: &ListParams,
-) -> Result<SlimListResponse<WorkSummary>, OpenAlexError> {
-    summary_list_result(client.list_works(params).await, WorkSummary::from)
+    params: &WorkListParams,
+) -> Result<SlimListResponse<WorkSummary>, FilterError> {
+    let (aliases, mut list_params) = params.into_aliases_and_list_params();
+    list_params.filter = resolve_work_filters(client, &aliases, list_params.filter.as_deref()).await?;
+    Ok(summary_list_result(client.list_works(&list_params).await, WorkSummary::from)?)
 }
 
 pub async fn author_list(

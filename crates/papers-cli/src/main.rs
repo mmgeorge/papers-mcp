@@ -7,7 +7,7 @@ use cli::{
     FunderCommand, InstitutionCommand, PublisherCommand, SourceCommand, SubfieldCommand,
     TopicCommand, WorkCommand, WorkFilterArgs,
 };
-use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient, WorkFilterAliases};
+use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient, WorkListParams};
 
 fn list_params_from_args(args: &cli::ListArgs) -> ListParams {
     ListParams {
@@ -24,8 +24,18 @@ fn list_params_from_args(args: &cli::ListArgs) -> ListParams {
     }
 }
 
-fn work_filter_aliases(wf: &WorkFilterArgs) -> WorkFilterAliases {
-    WorkFilterAliases {
+fn work_list_params(args: &cli::ListArgs, wf: &WorkFilterArgs) -> WorkListParams {
+    WorkListParams {
+        search: args.search.clone(),
+        filter: args.filter.clone(),
+        sort: args.sort.clone(),
+        per_page: Some(args.per_page),
+        page: args.page,
+        cursor: args.cursor.clone(),
+        sample: args.sample,
+        seed: args.seed,
+        select: None,
+        group_by: None,
         author: wf.author.clone(),
         topic: wf.topic.clone(),
         domain: wf.domain.clone(),
@@ -55,19 +65,7 @@ async fn main() {
     match cli.entity {
         EntityCommand::Work { cmd } => match cmd {
             WorkCommand::List { args, work_filters } => {
-                let aliases = work_filter_aliases(&work_filters);
-                let resolved = match papers::resolve_work_filters(
-                    &client,
-                    &aliases,
-                    args.filter.as_deref(),
-                )
-                .await
-                {
-                    Ok(f) => f,
-                    Err(e) => exit_err(&e.to_string()),
-                };
-                let mut params = list_params_from_args(&args);
-                params.filter = resolved;
+                let params = work_list_params(&args, &work_filters);
                 match papers::api::work_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
