@@ -2,6 +2,10 @@
 name = "papers-openalex"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+description = "Rust client for the OpenAlex academic research API"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 bon.workspace = true

@@ -9,9 +9,11 @@ authors = ["Matt George"]
 description = "CLI and MCP server for searching academic research and papers via OpenAlex"
 license = "MIT"
 readme = "README.md"
-repository = "github.com/mmgeorge/papers"
+repository = "https://github.com/mmgeorge/papers"
 
 [workspace.dependencies]
+papers-openalex = { path = "crates/papers-openalex", version = "0.1.0" }
+papers = { path = "crates/papers", version = "0.1.0" }
 dirs = "6"
 bon = "3"
 clap = { version = "4", features = ["derive", "wrap_help"] }

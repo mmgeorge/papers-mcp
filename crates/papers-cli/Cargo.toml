@@ -2,13 +2,17 @@
 name = "papers-cli"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+description = "CLI for searching academic research via OpenAlex"
+license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "papers"
 path = "src/main.rs"
 
 [dependencies]
-papers = { path = "../papers" }
+papers.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

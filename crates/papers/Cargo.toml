@@ -2,9 +2,13 @@
 name = "papers"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-papers-openalex = { path = "../papers-openalex" }
+papers-openalex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
