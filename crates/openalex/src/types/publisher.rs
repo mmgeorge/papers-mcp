@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::*;
 
@@ -25,7 +25,7 @@ use super::common::*;
 /// # ID formats
 ///
 /// Publishers can only be retrieved by OpenAlex ID (`P...`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Publisher {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/P4310319965"`).
     pub id: String,

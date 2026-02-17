@@ -72,10 +72,17 @@ const DEFAULT_BASE_URL: &str = "https://api.openalex.org";
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct OpenAlexClient {
     http: reqwest::Client,
     base_url: String,
     api_key: Option<String>,
+}
+
+impl Default for OpenAlexClient {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OpenAlexClient {

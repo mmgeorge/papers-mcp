@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::*;
 
@@ -31,7 +31,7 @@ use super::common::*;
 ///
 /// The `host_organization_lineage` array may contain `null` elements. This is a
 /// known API quirk — the field is typed as `Option<Vec<Option<String>>>`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/S137773608"`).
     pub id: String,

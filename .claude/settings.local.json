@@ -1,13 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch",
-      "WebFetch",
       "Bash(cargo:*)",
       "Bash(ls:*)",
       "Bash(curl:*)",
       "Bash(python:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(dir:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:*)",
+      "WebSearch"
     ]
   }
 }

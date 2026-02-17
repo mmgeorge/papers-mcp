@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::common::*;
@@ -37,7 +37,7 @@ use super::common::*;
 /// [`abstract_inverted_index`](Work::abstract_inverted_index): a
 /// `HashMap<String, Vec<u32>>` mapping each word to its position(s) in the
 /// abstract text. This format is more compact than storing the full text.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Work {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/W2741809807"`).
     pub id: String,

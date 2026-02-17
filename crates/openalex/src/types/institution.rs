@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::*;
 
@@ -27,7 +27,7 @@ use super::common::*;
 /// # ID formats
 ///
 /// Institutions can be retrieved by OpenAlex ID (`I...`) or ROR.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Institution {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/I136199984"`).
     pub id: String,

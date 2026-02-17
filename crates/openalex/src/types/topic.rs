@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::*;
 
@@ -32,7 +32,7 @@ use super::common::*;
 /// Within `Topic` entities, the hierarchy level `id` fields are integers. When
 /// topics appear nested in `Work` entities, these same fields are strings. The
 /// [`TopicHierarchyLevel::id`] field uses `serde_json::Value` to handle this.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Topic {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/T10001"`).
     pub id: String,

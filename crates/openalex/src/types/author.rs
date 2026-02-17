@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::common::*;
 
@@ -25,7 +25,7 @@ use super::common::*;
 /// # ID formats
 ///
 /// Authors can be retrieved by OpenAlex ID (`A...`) or ORCID.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Author {
     /// OpenAlex ID URI (e.g. `"https://openalex.org/A5023888391"`).
     pub id: String,

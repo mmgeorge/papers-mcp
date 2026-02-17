@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ── Shared nested types ────────────────────────────────────────────────
 
@@ -8,7 +8,7 @@ use serde::Deserialize;
 /// ```json
 /// {"2yr_mean_citedness": 4.065, "h_index": 20, "i10_index": 30}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummaryStats {
     /// Mean number of citations received by this entity's works in the last two
     /// years. Serialized as `"2yr_mean_citedness"` in JSON.
@@ -32,7 +32,7 @@ pub struct SummaryStats {
 /// ```json
 /// {"year": 2023, "works_count": 42, "oa_works_count": 30, "cited_by_count": 150}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CountsByYear {
     /// Calendar year.
     pub year: i32,
@@ -57,7 +57,7 @@ pub struct CountsByYear {
 /// ```json
 /// {"role": "funder", "id": "https://openalex.org/F4320332161", "works_count": 3253779}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Role {
     /// Role type: one of `"institution"`, `"funder"`, or `"publisher"`.
     pub role: Option<String>,
@@ -87,7 +87,7 @@ pub struct Role {
 ///   "is_published": true
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Location {
     /// Whether this location provides open-access to the full text.
     pub is_oa: Option<bool>,
@@ -143,7 +143,7 @@ pub struct Location {
 /// The `host_organization_lineage` array may contain `null` elements. This is
 /// an API quirk — the field is typed as `Option<Vec<Option<String>>>` to handle
 /// this.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DehydratedSource {
     /// OpenAlex ID (e.g. `"https://openalex.org/S1983995261"`).
     pub id: Option<String>,
@@ -192,7 +192,7 @@ pub struct DehydratedSource {
 /// ```json
 /// {"is_oa": true, "oa_status": "gold", "oa_url": "https://doi.org/...", "any_repository_has_fulltext": true}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAccess {
     /// Whether any location provides open-access to this work.
     pub is_oa: Option<bool>,
@@ -223,7 +223,7 @@ pub struct OpenAccess {
 ///   "raw_author_name": "Jason Priem"
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Authorship {
     /// Position in the author list: `"first"`, `"middle"`, or `"last"`.
     pub author_position: Option<String>,
@@ -256,7 +256,7 @@ pub struct Authorship {
 /// ```json
 /// {"raw_affiliation_string": "Dept of Biology, MIT", "institution_ids": ["https://openalex.org/I63966007"]}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorshipAffiliation {
     /// The affiliation string as it appears in the source.
     pub raw_affiliation_string: Option<String>,
@@ -271,7 +271,7 @@ pub struct AuthorshipAffiliation {
 /// ```json
 /// {"id": "https://openalex.org/A5023888391", "display_name": "Jason Priem", "orcid": "https://orcid.org/0000-0001-6187-6610"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DehydratedAuthor {
     /// OpenAlex ID (e.g. `"https://openalex.org/A5023888391"`).
     pub id: Option<String>,
@@ -296,7 +296,7 @@ pub struct DehydratedAuthor {
 ///   "lineage": ["https://openalex.org/I136199984"]
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DehydratedInstitution {
     /// OpenAlex ID (e.g. `"https://openalex.org/I136199984"`).
     pub id: Option<String>,
@@ -325,7 +325,7 @@ pub struct DehydratedInstitution {
 /// ```json
 /// {"id": "https://openalex.org/F4320332161", "display_name": "National Institutes of Health", "ror": "https://ror.org/01cwqze88"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DehydratedFunder {
     /// OpenAlex ID (e.g. `"https://openalex.org/F4320332161"`).
     pub id: Option<String>,
@@ -348,7 +348,7 @@ pub struct DehydratedFunder {
 ///   "funder_display_name": "National Institutes of Health"
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Award {
     /// OpenAlex ID of the award/grant.
     pub id: Option<String>,
@@ -374,7 +374,7 @@ pub struct Award {
 /// ```json
 /// {"volume": "6", "issue": "3", "first_page": "e4375", "last_page": "e4375"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Biblio {
     /// Journal or book volume number.
     pub volume: Option<String>,
@@ -397,7 +397,7 @@ pub struct Biblio {
 /// ```json
 /// {"value": 1620, "currency": "USD", "value_usd": 1620, "provenance": "doaj"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Apc {
     /// APC amount in the original currency.
     pub value: Option<i64>,
@@ -419,7 +419,7 @@ pub struct Apc {
 /// ```json
 /// {"price": 1620, "currency": "USD"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApcPrice {
     /// APC amount.
     pub price: Option<i64>,
@@ -441,7 +441,7 @@ pub struct ApcPrice {
 ///   "longitude": -71.1056
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Geo {
     /// City name.
     pub city: Option<String>,
@@ -483,7 +483,7 @@ pub struct Geo {
 ///   "domain": {"id": "4", "display_name": "Health Sciences"}
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicWithScore {
     /// OpenAlex topic ID (e.g. `"https://openalex.org/T10001"`).
     pub id: Option<String>,
@@ -525,7 +525,7 @@ pub struct TopicWithScore {
 ///   "domain": {"id": "4", "display_name": "Health Sciences"}
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicShare {
     /// OpenAlex topic ID.
     pub id: Option<String>,
@@ -560,7 +560,7 @@ pub struct TopicShare {
 /// The `id` field is typed as [`serde_json::Value`] because the OpenAlex API
 /// returns an integer for topics within the [`Topic`](crate::Topic) entity but
 /// a string when topics appear nested in [`Work`](crate::Work) entities.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicHierarchyLevel {
     /// Hierarchy level ID. May be an integer or string depending on context
     /// (see struct-level docs).
@@ -577,7 +577,7 @@ pub struct TopicHierarchyLevel {
 /// ```json
 /// {"id": "https://openalex.org/T10002", "display_name": "HIV/AIDS Prevention and Treatment"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicSibling {
     /// OpenAlex topic ID.
     pub id: Option<String>,
@@ -600,7 +600,7 @@ pub struct TopicSibling {
 ///   "score": 0.86
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Concept {
     /// OpenAlex concept ID.
     pub id: Option<String>,
@@ -623,7 +623,7 @@ pub struct Concept {
 /// ```json
 /// {"id": "https://openalex.org/keywords/open-access", "display_name": "Open Access", "score": 0.95}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keyword {
     /// OpenAlex keyword ID.
     pub id: Option<String>,
@@ -650,7 +650,7 @@ pub struct Keyword {
 ///   "is_major_topic": false
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeshTerm {
     /// MeSH descriptor unique identifier (e.g. `"D017712"`).
     pub descriptor_ui: Option<String>,
@@ -674,7 +674,7 @@ pub struct MeshTerm {
 /// ```json
 /// {"id": "https://metadata.un.org/sdg/3", "display_name": "Good health and well-being", "score": 0.85}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdgTag {
     /// SDG identifier URL.
     pub id: Option<String>,
@@ -692,7 +692,7 @@ pub struct SdgTag {
 /// ```json
 /// {"value": 99.5, "is_in_top_1_percent": true, "is_in_top_10_percent": true}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CitationPercentile {
     /// Percentile value (0–100). A value of 95 means this work is cited more
     /// than 95% of works published in the same year.
@@ -712,7 +712,7 @@ pub struct CitationPercentile {
 /// ```json
 /// {"min": 143, "max": 143}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CitedByPercentileYear {
     /// Minimum citation count at the work's percentile for its year.
     pub min: Option<i32>,
@@ -726,7 +726,7 @@ pub struct CitedByPercentileYear {
 /// ```json
 /// {"pdf": true, "grobid_xml": true}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HasContent {
     /// Whether a PDF version is available.
     pub pdf: Option<bool>,
@@ -746,7 +746,7 @@ pub struct HasContent {
 ///   "years": [2022, 2021, 2020]
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Affiliation {
     /// The affiliated institution.
     pub institution: Option<DehydratedInstitution>,
@@ -771,7 +771,7 @@ pub struct Affiliation {
 ///   "relationship": "child"
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssociatedInstitution {
     /// OpenAlex ID.
     pub id: Option<String>,
@@ -798,7 +798,7 @@ pub struct AssociatedInstitution {
 /// ```json
 /// {"first": "Jason", "middle": null, "last": "Priem", "suffix": null, "nickname": null}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedName {
     /// First/given name.
     pub first: Option<String>,
@@ -834,7 +834,7 @@ pub struct ParsedName {
 ///
 /// The `mag` field is a string, not an integer, despite containing numeric
 /// values. This is a known API quirk.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,
@@ -857,7 +857,7 @@ pub struct WorkIds {
 /// ```json
 /// {"openalex": "https://openalex.org/A5023888391", "orcid": "https://orcid.org/0000-0001-6187-6610", "scopus": "56462225600"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,
@@ -884,7 +884,7 @@ pub struct AuthorIds {
 /// # Note
 ///
 /// The `mag` field is a string, not an integer.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,
@@ -918,7 +918,7 @@ pub struct SourceIds {
 /// # Note
 ///
 /// The `mag` field is a string, not an integer.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstitutionIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,
@@ -944,7 +944,7 @@ pub struct InstitutionIds {
 /// ```json
 /// {"openalex": "https://openalex.org/T10001", "wikipedia": "https://en.wikipedia.org/wiki/Malaria"}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,
@@ -958,7 +958,7 @@ pub struct TopicIds {
 /// ```json
 /// {"openalex": "https://openalex.org/P4310319965", "ror": "https://ror.org/...", "wikidata": "https://www.wikidata.org/wiki/Q..."}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublisherIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,
@@ -981,7 +981,7 @@ pub struct PublisherIds {
 ///   "doi": "https://doi.org/10.13039/100000002"
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunderIds {
     /// OpenAlex ID URL.
     pub openalex: Option<String>,

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ── List response ──────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ use serde::Deserialize;
 ///
 /// When `group_by` is used, the `group_by` array is populated and
 /// `meta.groups_count` is non-null.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListResponse<T> {
     /// Metadata about the query: total count, pagination state, timing.
     pub meta: ListMeta,
@@ -41,7 +41,7 @@ pub struct ListResponse<T> {
 /// ```json
 /// {"count": 288286684, "db_response_time_ms": 109, "page": 1, "per_page": 1, "next_cursor": null, "groups_count": null}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListMeta {
     /// Total number of entities matching the query (before pagination).
     pub count: i64,
@@ -70,7 +70,7 @@ pub struct ListMeta {
 /// ```json
 /// {"key": "https://openalex.org/types/article", "key_display_name": "article", "count": 209055572}
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupByResult {
     /// The raw key value for this group (often an OpenAlex URI).
     pub key: String,
@@ -109,7 +109,7 @@ pub struct GroupByResult {
 ///   }]
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutocompleteResponse {
     /// Metadata about the autocomplete query.
     pub meta: AutocompleteMeta,
@@ -119,7 +119,7 @@ pub struct AutocompleteResponse {
 }
 
 /// Metadata for an autocomplete response.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutocompleteMeta {
     /// Total number of entities matching the query prefix.
     pub count: i64,
@@ -144,7 +144,7 @@ pub struct AutocompleteMeta {
 /// - **concepts:** hierarchy level
 /// - **publishers:** country
 /// - **funders:** country and description
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutocompleteResult {
     /// Full OpenAlex URI (e.g. `"https://openalex.org/A5024159082"`).
     pub id: String,
@@ -194,7 +194,7 @@ pub struct AutocompleteResult {
 ///   ]
 /// }
 /// ```
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindWorksResponse {
     /// Optional metadata (structure varies).
     pub meta: Option<serde_json::Value>,
@@ -206,7 +206,7 @@ pub struct FindWorksResponse {
 
 /// A single result from semantic search, containing a similarity score and the
 /// work data.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FindWorksResult {
     /// AI similarity score between 0.0 and 1.0, where 1.0 is most similar to
     /// the query.
