@@ -1,5 +1,7 @@
 # papers
 
+[![crates.io](https://img.shields.io/crates/v/papers-cli.svg)](https://crates.io/crates/papers-cli)
+
 A command-line interface for the [OpenAlex](https://openalex.org) academic research database.
 Query 240M+ scholarly works, authors, journals, institutions, topics, publishers, and funders.
 

@@ -1,5 +1,7 @@
 # papers-openalex
 
+[![crates.io](https://img.shields.io/crates/v/papers-openalex.svg)](https://crates.io/crates/papers-openalex)
+
 Async Rust client for the [OpenAlex REST API](https://docs.openalex.org).
 
 OpenAlex is a free, open catalog of scholarly research: 240M+ works, 110M+ authors, and metadata across sources, institutions, topics, publishers, and funders.

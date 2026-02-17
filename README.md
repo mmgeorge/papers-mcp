@@ -1,6 +1,7 @@
 # papers
 
 [![CI](https://github.com/mmgeorge/papers/actions/workflows/ci.yml/badge.svg)](https://github.com/mmgeorge/papers/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/papers-cli.svg)](https://crates.io/crates/papers-cli)
 
 Monorepo for `papers` — a CLI and MCP server for searching academic research via OpenAlex.
 

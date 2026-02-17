@@ -1,5 +1,7 @@
 # papers-mcp
 
+[![crates.io](https://img.shields.io/crates/v/papers-mcp.svg)](https://crates.io/crates/papers-mcp)
+
 An [MCP](https://modelcontextprotocol.io) server that exposes the [OpenAlex](https://openalex.org)
 academic research database to AI assistants. 240M+ scholarly works, authors, journals, institutions,
 topics, publishers, and funders — all queryable from Claude.
