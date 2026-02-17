@@ -198,6 +198,28 @@ impl ZoteroClient {
         serde_json::from_str(&text).map_err(ZoteroError::Json)
     }
 
+    /// GET request returning raw bytes (for file downloads).
+    /// Does not use caching (files are too large).
+    async fn get_binary(&self, path: &str) -> Result<Vec<u8>> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .http
+            .get(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api {
+                status: status.as_u16(),
+                message,
+            });
+        }
+        Ok(resp.bytes().await?.to_vec())
+    }
+
     // ── Item endpoints ─────────────────────────────────────────────────
 
     /// List all items in the library.
@@ -286,6 +308,17 @@ impl ZoteroClient {
             collection_key
         );
         self.get_json_array(&path, params.to_query_pairs()).await
+    }
+
+    /// Download the file content of an attachment item.
+    ///
+    /// `GET /users/<id>/items/<key>/file`
+    ///
+    /// Returns raw bytes. The reqwest client follows the S3 redirect
+    /// automatically.
+    pub async fn download_item_file(&self, key: &str) -> Result<Vec<u8>> {
+        let path = format!("{}/items/{}/file", self.user_prefix(), key);
+        self.get_binary(&path).await
     }
 
     // ── Collection endpoints ───────────────────────────────────────────
@@ -1031,6 +1064,42 @@ mod tests {
             .with_cache(temp_cache());
         let _ = client.get_item("bad").await;
         let _ = client.get_item("bad").await;
+    }
+
+    // ── File download test ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_download_item_file() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/ATTACH1/file"))
+            .and(header("Zotero-API-Version", "3"))
+            .and(header("Zotero-API-Key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(b"fake-pdf-bytes".to_vec()),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let bytes = client.download_item_file("ATTACH1").await.unwrap();
+        assert_eq!(bytes, b"fake-pdf-bytes");
+    }
+
+    #[tokio::test]
+    async fn test_download_item_file_404() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/MISSING/file"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client.download_item_file("MISSING").await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 404),
+            _ => panic!("Expected Api error, got {:?}", err),
+        }
     }
 
     // ── URL encoding test ─────────────────────────────────────────────

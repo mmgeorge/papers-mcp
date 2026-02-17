@@ -1,4 +1,5 @@
 use papers_core::{DiskCache, OpenAlexClient};
+use papers_zotero::ZoteroClient;
 use std::time::Duration;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -10,12 +11,13 @@ use crate::params::{
     AutocompleteToolParams, AuthorListToolParams, DomainListToolParams, FieldListToolParams,
     FindWorksToolParams, FunderListToolParams, GetToolParams, InstitutionListToolParams,
     PublisherListToolParams, SourceListToolParams, SubfieldListToolParams, TopicListToolParams,
-    WorkListToolParams,
+    WorkListToolParams, WorkTextToolParams,
 };
 
 #[derive(Clone)]
 pub struct PapersMcp {
     client: OpenAlexClient,
+    zotero: Option<ZoteroClient>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -31,8 +33,10 @@ impl PapersMcp {
         if let Ok(cache) = DiskCache::default_location(Duration::from_secs(600)) {
             client = client.with_cache(cache);
         }
+        let zotero = ZoteroClient::from_env().ok();
         Self {
             client,
+            zotero,
             tool_router: Self::tool_router(),
         }
     }
@@ -40,6 +44,7 @@ impl PapersMcp {
     pub fn with_client(client: OpenAlexClient) -> Self {
         Self {
             client,
+            zotero: ZoteroClient::from_env().ok(),
             tool_router: Self::tool_router(),
         }
     }
@@ -251,6 +256,17 @@ impl PapersMcp {
     pub async fn work_find(&self, Parameters(params): Parameters<FindWorksToolParams>) -> Result<String, String> {
         json_result(papers_core::api::work_find(&self.client, &params.into_find_params()).await)
     }
+
+    /// Get the full text content of a scholarly work by downloading and extracting its PDF.
+    /// Tries multiple sources: local Zotero library, remote Zotero API,
+    /// direct open-access URLs, and the OpenAlex content API.
+    /// Accepts OpenAlex IDs, DOIs, or other work identifiers.
+    #[tool]
+    pub async fn work_text(&self, Parameters(params): Parameters<WorkTextToolParams>) -> Result<String, String> {
+        json_result(
+            papers_core::text::work_text(&self.client, self.zotero.as_ref(), &params.id).await
+        )
+    }
 }
 
 #[tool_handler]
@@ -272,7 +288,10 @@ impl ServerHandler for PapersMcp {
             instructions: Some(
                 "MCP server for querying the OpenAlex academic research database. \
                  Provides tools to search, filter, and retrieve scholarly works, \
-                 authors, sources, institutions, topics, publishers, and funders."
+                 authors, sources, institutions, topics, publishers, and funders. \
+                 Also supports full-text extraction from PDFs via the work_text tool, \
+                 which can download papers from Zotero, open-access repositories, \
+                 or the OpenAlex content API."
                     .into(),
             ),
         }

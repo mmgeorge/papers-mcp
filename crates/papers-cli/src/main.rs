@@ -14,6 +14,7 @@ use papers_core::{
     FunderListParams, GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams,
     SourceListParams, SubfieldListParams, TopicListParams, WorkListParams,
 };
+use papers_zotero::ZoteroClient;
 use std::time::Duration;
 
 fn work_list_params(args: &cli::ListArgs, wf: &WorkFilterArgs) -> WorkListParams {
@@ -293,6 +294,19 @@ async fn main() {
                             print_json(&resp);
                         } else {
                             print!("{}", format::format_find_works(&resp));
+                        }
+                    }
+                    Err(e) => exit_err(&e.to_string()),
+                }
+            }
+            WorkCommand::Text { id, json } => {
+                let zotero = ZoteroClient::from_env().ok();
+                match papers_core::text::work_text(&client, zotero.as_ref(), &id).await {
+                    Ok(result) => {
+                        if json {
+                            print_json(&result);
+                        } else {
+                            print!("{}", format::format_work_text(&result));
                         }
                     }
                     Err(e) => exit_err(&e.to_string()),

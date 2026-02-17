@@ -9,9 +9,14 @@ repository.workspace = true
 
 [dependencies]
 papers-openalex.workspace = true
+papers-zotero.workspace = true
+dirs.workspace = true
+reqwest.workspace = true
+pdf-extract.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

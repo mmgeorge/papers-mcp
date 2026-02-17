@@ -1,4 +1,5 @@
 use papers_core::api;
+use papers_core::text;
 use papers_core::{
     AuthorListParams, DomainListParams, FieldListParams, FindWorksParams, FunderListParams,
     GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams, SourceListParams,
@@ -783,4 +784,69 @@ async fn test_work_get_not_found_error() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("nonexistent paper title xyz"));
+}
+
+// ── work_text tests ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_work_text_no_pdf_found() {
+    let mock = MockServer::start().await;
+    // Work has no pdf_url in any location and no has_content.pdf
+    Mock::given(method("GET"))
+        .and(path("/works/W1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{
+                "id": "https://openalex.org/W1",
+                "display_name": "A Paper Without PDF",
+                "doi": null,
+                "primary_location": null,
+                "locations": [],
+                "best_oa_location": null,
+                "has_content": null
+            }"#,
+        ))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let result = text::work_text(&client, None, "W1").await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match err {
+        text::WorkTextError::NoPdfFound { ref work_id, ref title } => {
+            assert_eq!(work_id, "https://openalex.org/W1");
+            assert_eq!(title.as_deref(), Some("A Paper Without PDF"));
+        }
+        other => panic!("Expected NoPdfFound, got: {other}"),
+    }
+    assert!(err.to_string().contains("A Paper Without PDF"));
+}
+
+#[tokio::test]
+async fn test_work_text_no_pdf_found_with_non_whitelisted_url() {
+    let mock = MockServer::start().await;
+    // Work has a pdf_url but on a non-whitelisted domain
+    Mock::given(method("GET"))
+        .and(path("/works/W2"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{
+                "id": "https://openalex.org/W2",
+                "display_name": "Publisher Paper",
+                "doi": null,
+                "primary_location": {"pdf_url": "https://publisher.com/paper.pdf"},
+                "locations": [],
+                "best_oa_location": null,
+                "has_content": null
+            }"#,
+        ))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let result = text::work_text(&client, None, "W2").await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        text::WorkTextError::NoPdfFound { .. } => {}
+        other => panic!("Expected NoPdfFound, got: {other}"),
+    }
 }

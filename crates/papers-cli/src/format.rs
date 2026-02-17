@@ -2,6 +2,7 @@ use papers_core::summary::{
     AuthorSummary, DomainSummary, FieldSummary, FunderSummary, InstitutionSummary,
     PublisherSummary, SlimListResponse, SourceSummary, SubfieldSummary, TopicSummary, WorkSummary,
 };
+use papers_core::text::WorkTextResult;
 use papers_core::{
     Author, AutocompleteResponse, Domain, Field, FindWorksResponse, Funder, Institution, ListMeta,
     Publisher, Source, Subfield, Topic, Work,
@@ -718,6 +719,37 @@ pub fn format_find_works(resp: &FindWorksResponse) -> String {
             out.push_str(&format!("    ID: {id}\n"));
         }
         out.push_str(&format!("    Score: {:.3}\n", r.score));
+    }
+    out
+}
+
+// ── Work text ─────────────────────────────────────────────────────────────
+
+pub fn format_work_text(result: &WorkTextResult) -> String {
+    let mut out = String::new();
+    if let Some(title) = &result.title {
+        out.push_str(&format!("Work: {title}\n"));
+    }
+    out.push_str(&format!("ID:   {}\n", result.work_id));
+    if let Some(doi) = &result.doi {
+        out.push_str(&format!("DOI:  {doi}\n"));
+    }
+    let source_desc = match &result.source {
+        papers_core::text::PdfSource::ZoteroLocal { path } => format!("Zotero (local: {path})"),
+        papers_core::text::PdfSource::ZoteroRemote { item_key } => {
+            format!("Zotero (remote: {item_key})")
+        }
+        papers_core::text::PdfSource::DirectUrl { url } => format!("Direct URL: {url}"),
+        papers_core::text::PdfSource::OpenAlexContent => "OpenAlex Content API".to_string(),
+    };
+    out.push_str(&format!("Source: {source_desc}\n"));
+    out.push_str(&format!(
+        "Length: {} characters\n\n",
+        result.text.len()
+    ));
+    out.push_str(&result.text);
+    if !result.text.ends_with('\n') {
+        out.push('\n');
     }
     out
 }

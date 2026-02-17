@@ -1,6 +1,7 @@
 pub mod api;
 pub mod filter;
 pub mod summary;
+pub mod text;
 
 pub use filter::{
     AuthorListParams, DomainListParams, FieldListParams, FilterError, FunderListParams,

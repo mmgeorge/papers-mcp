@@ -397,6 +397,14 @@ pub enum WorkCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Extract full text from a work's PDF (tries Zotero, open-access URLs, OpenAlex content API)
+    Text {
+        /// Work ID (OpenAlex ID, DOI, PMID, or PMCID)
+        id: String,
+        /// Output raw JSON (includes source metadata)
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]

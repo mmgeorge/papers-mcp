@@ -622,6 +622,13 @@ impl SubfieldListToolParams {
     }
 }
 
+/// Parameters for the `work_text` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct WorkTextToolParams {
+    /// Work identifier: OpenAlex ID (W...), DOI, PMID, or PMCID.
+    pub id: String,
+}
+
 /// Parameters for single-entity GET endpoints.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct GetToolParams {
