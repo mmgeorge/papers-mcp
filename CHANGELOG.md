@@ -1,16 +1,23 @@
 ## [unreleased]
 
-### 💼 Other
+### Other
 
 - Setup cargo-dist for releases
+
+### Miscellaneous Tasks
+
+- Add cliff
+- Configure cargo-release with git-cliff integration
+- Release v0.1.3
+- Fix git-cliff workdir in release hook
 ## [papers-openalex-v0.1.2] - 2026-02-17
 
-### ⚙️ Miscellaneous Tasks
+### Miscellaneous Tasks
 
 - Release
 ## [papers-openalex-v0.1.1] - 2026-02-17
 
-### 🚀 Features
+### Features
 
 - Add openalex rest api
 - Implement papers-mcp server and update openalex types
@@ -24,12 +31,12 @@
 - Add shorthand filter aliases to all list endpoints
 - Implement smart ID resolution for get endpoints
 
-### 💼 Other
+### Other
 
 - Use workspace inheritance for common dependencies
 - Update workspace dependency management
 
-### 🚜 Refactor
+### Refactor
 
 - Add crates directory
 - Rename tools to entity_verb pattern
@@ -38,7 +45,7 @@
 - Remove deprecated concept autocomplete entity
 - Rename papers crate to papers-core
 
-### 📚 Documentation
+### Documentation
 
 - Expand openalex entity descriptions
 - Add readmes
@@ -50,7 +57,7 @@
 - Update papers crate description in openalex readme
 - Update readme with filter aliases and usage
 
-### ⚙️ Miscellaneous Tasks
+### Miscellaneous Tasks
 
 - Update tool permissions in claude settings
 - Add github actions workflow for rust ci
