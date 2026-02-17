@@ -9,7 +9,7 @@ use cli::{
     SourceCommand, SourceFilterArgs, SubfieldCommand, SubfieldFilterArgs, TopicCommand,
     TopicFilterArgs, WorkCommand, WorkFilterArgs,
 };
-use papers::{
+use papers_core::{
     AuthorListParams, DiskCache, DomainListParams, FieldListParams, FindWorksParams,
     FunderListParams, GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams,
     SourceListParams, SubfieldListParams, TopicListParams, WorkListParams,
@@ -238,7 +238,7 @@ async fn main() {
         EntityCommand::Work { cmd } => match cmd {
             WorkCommand::List { args, work_filters } => {
                 let params = work_list_params(&args, &work_filters);
-                match papers::api::work_list(&client, &params).await {
+                match papers_core::api::work_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -250,7 +250,7 @@ async fn main() {
                 }
             }
             WorkCommand::Get { id, json } => {
-                match papers::api::work_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::work_get(&client, &id, &GetParams::default()).await {
                     Ok(work) => {
                         if json {
                             print_json(&work);
@@ -262,7 +262,7 @@ async fn main() {
                 }
             }
             WorkCommand::Autocomplete { query, json } => {
-                match papers::api::work_autocomplete(&client, &query).await {
+                match papers_core::api::work_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -287,7 +287,7 @@ async fn main() {
                     count,
                     filter,
                 };
-                match papers::api::work_find(&client, &params).await {
+                match papers_core::api::work_find(&client, &params).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -303,7 +303,7 @@ async fn main() {
         EntityCommand::Author { cmd } => match cmd {
             AuthorCommand::List { args, filters } => {
                 let params = author_list_params(&args, &filters);
-                match papers::api::author_list(&client, &params).await {
+                match papers_core::api::author_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -315,7 +315,7 @@ async fn main() {
                 }
             }
             AuthorCommand::Get { id, json } => {
-                match papers::api::author_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::author_get(&client, &id, &GetParams::default()).await {
                     Ok(author) => {
                         if json {
                             print_json(&author);
@@ -327,7 +327,7 @@ async fn main() {
                 }
             }
             AuthorCommand::Autocomplete { query, json } => {
-                match papers::api::author_autocomplete(&client, &query).await {
+                match papers_core::api::author_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -343,7 +343,7 @@ async fn main() {
         EntityCommand::Source { cmd } => match cmd {
             SourceCommand::List { args, filters } => {
                 let params = source_list_params(&args, &filters);
-                match papers::api::source_list(&client, &params).await {
+                match papers_core::api::source_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -355,7 +355,7 @@ async fn main() {
                 }
             }
             SourceCommand::Get { id, json } => {
-                match papers::api::source_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::source_get(&client, &id, &GetParams::default()).await {
                     Ok(source) => {
                         if json {
                             print_json(&source);
@@ -367,7 +367,7 @@ async fn main() {
                 }
             }
             SourceCommand::Autocomplete { query, json } => {
-                match papers::api::source_autocomplete(&client, &query).await {
+                match papers_core::api::source_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -383,7 +383,7 @@ async fn main() {
         EntityCommand::Institution { cmd } => match cmd {
             InstitutionCommand::List { args, filters } => {
                 let params = institution_list_params(&args, &filters);
-                match papers::api::institution_list(&client, &params).await {
+                match papers_core::api::institution_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -395,7 +395,7 @@ async fn main() {
                 }
             }
             InstitutionCommand::Get { id, json } => {
-                match papers::api::institution_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::institution_get(&client, &id, &GetParams::default()).await {
                     Ok(inst) => {
                         if json {
                             print_json(&inst);
@@ -407,7 +407,7 @@ async fn main() {
                 }
             }
             InstitutionCommand::Autocomplete { query, json } => {
-                match papers::api::institution_autocomplete(&client, &query).await {
+                match papers_core::api::institution_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -423,7 +423,7 @@ async fn main() {
         EntityCommand::Topic { cmd } => match cmd {
             TopicCommand::List { args, filters } => {
                 let params = topic_list_params(&args, &filters);
-                match papers::api::topic_list(&client, &params).await {
+                match papers_core::api::topic_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -435,7 +435,7 @@ async fn main() {
                 }
             }
             TopicCommand::Get { id, json } => {
-                match papers::api::topic_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::topic_get(&client, &id, &GetParams::default()).await {
                     Ok(topic) => {
                         if json {
                             print_json(&topic);
@@ -451,7 +451,7 @@ async fn main() {
         EntityCommand::Publisher { cmd } => match cmd {
             PublisherCommand::List { args, filters } => {
                 let params = publisher_list_params(&args, &filters);
-                match papers::api::publisher_list(&client, &params).await {
+                match papers_core::api::publisher_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -463,7 +463,7 @@ async fn main() {
                 }
             }
             PublisherCommand::Get { id, json } => {
-                match papers::api::publisher_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::publisher_get(&client, &id, &GetParams::default()).await {
                     Ok(pub_) => {
                         if json {
                             print_json(&pub_);
@@ -475,7 +475,7 @@ async fn main() {
                 }
             }
             PublisherCommand::Autocomplete { query, json } => {
-                match papers::api::publisher_autocomplete(&client, &query).await {
+                match papers_core::api::publisher_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -491,7 +491,7 @@ async fn main() {
         EntityCommand::Funder { cmd } => match cmd {
             FunderCommand::List { args, filters } => {
                 let params = funder_list_params(&args, &filters);
-                match papers::api::funder_list(&client, &params).await {
+                match papers_core::api::funder_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -503,7 +503,7 @@ async fn main() {
                 }
             }
             FunderCommand::Get { id, json } => {
-                match papers::api::funder_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::funder_get(&client, &id, &GetParams::default()).await {
                     Ok(funder) => {
                         if json {
                             print_json(&funder);
@@ -515,7 +515,7 @@ async fn main() {
                 }
             }
             FunderCommand::Autocomplete { query, json } => {
-                match papers::api::funder_autocomplete(&client, &query).await {
+                match papers_core::api::funder_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);
@@ -531,7 +531,7 @@ async fn main() {
         EntityCommand::Domain { cmd } => match cmd {
             DomainCommand::List { args, filters } => {
                 let params = domain_list_params(&args, &filters);
-                match papers::api::domain_list(&client, &params).await {
+                match papers_core::api::domain_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -543,7 +543,7 @@ async fn main() {
                 }
             }
             DomainCommand::Get { id, json } => {
-                match papers::api::domain_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::domain_get(&client, &id, &GetParams::default()).await {
                     Ok(domain) => {
                         if json {
                             print_json(&domain);
@@ -559,7 +559,7 @@ async fn main() {
         EntityCommand::Field { cmd } => match cmd {
             FieldCommand::List { args, filters } => {
                 let params = field_list_params(&args, &filters);
-                match papers::api::field_list(&client, &params).await {
+                match papers_core::api::field_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -571,7 +571,7 @@ async fn main() {
                 }
             }
             FieldCommand::Get { id, json } => {
-                match papers::api::field_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::field_get(&client, &id, &GetParams::default()).await {
                     Ok(field) => {
                         if json {
                             print_json(&field);
@@ -587,7 +587,7 @@ async fn main() {
         EntityCommand::Subfield { cmd } => match cmd {
             SubfieldCommand::List { args, filters } => {
                 let params = subfield_list_params(&args, &filters);
-                match papers::api::subfield_list(&client, &params).await {
+                match papers_core::api::subfield_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {
                             print_json(&resp);
@@ -599,7 +599,7 @@ async fn main() {
                 }
             }
             SubfieldCommand::Get { id, json } => {
-                match papers::api::subfield_get(&client, &id, &GetParams::default()).await {
+                match papers_core::api::subfield_get(&client, &id, &GetParams::default()).await {
                     Ok(subfield) => {
                         if json {
                             print_json(&subfield);
@@ -611,7 +611,7 @@ async fn main() {
                 }
             }
             SubfieldCommand::Autocomplete { query, json } => {
-                match papers::api::subfield_autocomplete(&client, &query).await {
+                match papers_core::api::subfield_autocomplete(&client, &query).await {
                     Ok(resp) => {
                         if json {
                             print_json(&resp);

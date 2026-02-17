@@ -29,8 +29,8 @@ pub struct ListToolParams {
 }
 
 impl ListToolParams {
-    pub fn into_list_params(self) -> papers::ListParams {
-        papers::ListParams {
+    pub fn into_list_params(self) -> papers_core::ListParams {
+        papers_core::ListParams {
             filter: self.filter,
             search: self.search,
             sort: self.sort,
@@ -100,8 +100,8 @@ pub struct WorkListToolParams {
 }
 
 impl WorkListToolParams {
-    pub fn into_work_list_params(&self) -> papers::WorkListParams {
-        papers::WorkListParams {
+    pub fn into_work_list_params(&self) -> papers_core::WorkListParams {
+        papers_core::WorkListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -171,8 +171,8 @@ pub struct AuthorListToolParams {
 }
 
 impl AuthorListToolParams {
-    pub fn into_entity_params(&self) -> papers::AuthorListParams {
-        papers::AuthorListParams {
+    pub fn into_entity_params(&self) -> papers_core::AuthorListParams {
+        papers_core::AuthorListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -233,8 +233,8 @@ pub struct SourceListToolParams {
 }
 
 impl SourceListToolParams {
-    pub fn into_entity_params(&self) -> papers::SourceListParams {
-        papers::SourceListParams {
+    pub fn into_entity_params(&self) -> papers_core::SourceListParams {
+        papers_core::SourceListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -292,8 +292,8 @@ pub struct InstitutionListToolParams {
 }
 
 impl InstitutionListToolParams {
-    pub fn into_entity_params(&self) -> papers::InstitutionListParams {
-        papers::InstitutionListParams {
+    pub fn into_entity_params(&self) -> papers_core::InstitutionListParams {
+        papers_core::InstitutionListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -349,8 +349,8 @@ pub struct TopicListToolParams {
 }
 
 impl TopicListToolParams {
-    pub fn into_entity_params(&self) -> papers::TopicListParams {
-        papers::TopicListParams {
+    pub fn into_entity_params(&self) -> papers_core::TopicListParams {
+        papers_core::TopicListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -404,8 +404,8 @@ pub struct PublisherListToolParams {
 }
 
 impl PublisherListToolParams {
-    pub fn into_entity_params(&self) -> papers::PublisherListParams {
-        papers::PublisherListParams {
+    pub fn into_entity_params(&self) -> papers_core::PublisherListParams {
+        papers_core::PublisherListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -458,8 +458,8 @@ pub struct FunderListToolParams {
 }
 
 impl FunderListToolParams {
-    pub fn into_entity_params(&self) -> papers::FunderListParams {
-        papers::FunderListParams {
+    pub fn into_entity_params(&self) -> papers_core::FunderListParams {
+        papers_core::FunderListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -506,8 +506,8 @@ pub struct DomainListToolParams {
 }
 
 impl DomainListToolParams {
-    pub fn into_entity_params(&self) -> papers::DomainListParams {
-        papers::DomainListParams {
+    pub fn into_entity_params(&self) -> papers_core::DomainListParams {
+        papers_core::DomainListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -553,8 +553,8 @@ pub struct FieldListToolParams {
 }
 
 impl FieldListToolParams {
-    pub fn into_entity_params(&self) -> papers::FieldListParams {
-        papers::FieldListParams {
+    pub fn into_entity_params(&self) -> papers_core::FieldListParams {
+        papers_core::FieldListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -603,8 +603,8 @@ pub struct SubfieldListToolParams {
 }
 
 impl SubfieldListToolParams {
-    pub fn into_entity_params(&self) -> papers::SubfieldListParams {
-        papers::SubfieldListParams {
+    pub fn into_entity_params(&self) -> papers_core::SubfieldListParams {
+        papers_core::SubfieldListParams {
             filter: self.filter.clone(),
             search: self.search.clone(),
             sort: self.sort.clone(),
@@ -633,8 +633,8 @@ pub struct GetToolParams {
 }
 
 impl GetToolParams {
-    pub fn into_get_params(&self) -> papers::GetParams {
-        papers::GetParams {
+    pub fn into_get_params(&self) -> papers_core::GetParams {
+        papers_core::GetParams {
             select: self.select.clone(),
         }
     }
@@ -660,8 +660,8 @@ pub struct FindWorksToolParams {
 }
 
 impl FindWorksToolParams {
-    pub fn into_find_params(self) -> papers::FindWorksParams {
-        papers::FindWorksParams {
+    pub fn into_find_params(self) -> papers_core::FindWorksParams {
+        papers_core::FindWorksParams {
             query: self.query,
             count: self.count,
             filter: self.filter,

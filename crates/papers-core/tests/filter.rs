@@ -1,9 +1,9 @@
-use papers::filter::{WorkFilterAliases, resolve_work_filters};
-use papers::{
+use papers_core::filter::{WorkFilterAliases, resolve_work_filters};
+use papers_core::{
     AuthorListParams, FieldListParams, FunderListParams, InstitutionListParams, OpenAlexClient,
     PublisherListParams, SourceListParams, SubfieldListParams, TopicListParams,
 };
-use papers::api;
+use papers_core::api;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 

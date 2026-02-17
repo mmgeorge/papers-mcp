@@ -1,8 +1,8 @@
-use papers::summary::{
+use papers_core::summary::{
     AuthorSummary, DomainSummary, FieldSummary, FunderSummary, InstitutionSummary,
     PublisherSummary, SlimListResponse, SourceSummary, SubfieldSummary, TopicSummary, WorkSummary,
 };
-use papers::{
+use papers_core::{
     Author, AutocompleteResponse, Domain, Field, FindWorksResponse, Funder, Institution, ListMeta,
     Publisher, Source, Subfield, Topic, Work,
 };

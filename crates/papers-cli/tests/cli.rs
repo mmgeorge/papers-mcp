@@ -1,4 +1,4 @@
-use papers::{
+use papers_core::{
     AuthorListParams, DomainListParams, FieldListParams, FunderListParams, GetParams,
     InstitutionListParams, OpenAlexClient, PublisherListParams, SourceListParams,
     SubfieldListParams, TopicListParams, WorkListParams,
@@ -346,7 +346,7 @@ async fn test_work_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::work_list(&client, &WorkListParams::default()).await.unwrap();
+    let result = papers_core::api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let text = papers_cli_format::format_work_list(&result);
 
     assert!(text.contains("Bitonic Sort"));
@@ -365,7 +365,7 @@ async fn test_work_list_json() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::work_list(&client, &WorkListParams::default()).await.unwrap();
+    let result = papers_core::api::work_list(&client, &WorkListParams::default()).await.unwrap();
     let json = serde_json::to_string(&result).unwrap();
 
     assert!(json.contains("Bitonic Sort"));
@@ -383,7 +383,7 @@ async fn test_work_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let work = papers::api::work_get(&client, "W1", &GetParams::default()).await.unwrap();
+    let work = papers_core::api::work_get(&client, "W1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_work_get(&work);
 
     assert!(text.contains("Bitonic Sort"));
@@ -401,7 +401,7 @@ async fn test_work_get_json() {
         .await;
 
     let client = make_client(&mock);
-    let work = papers::api::work_get(&client, "W1", &GetParams::default()).await.unwrap();
+    let work = papers_core::api::work_get(&client, "W1", &GetParams::default()).await.unwrap();
     let json = serde_json::to_string(&work).unwrap();
 
     assert!(json.contains("referenced_works"));
@@ -417,7 +417,7 @@ async fn test_author_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::author_list(&client, &AuthorListParams::default()).await.unwrap();
+    let result = papers_core::api::author_list(&client, &AuthorListParams::default()).await.unwrap();
     let text = papers_cli_format::format_author_list(&result);
 
     assert!(text.contains("Alice Smith"));
@@ -436,7 +436,7 @@ async fn test_author_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let author = papers::api::author_get(&client, "A1", &GetParams::default()).await.unwrap();
+    let author = papers_core::api::author_get(&client, "A1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_author_get(&author);
 
     assert!(text.contains("Alice Smith"));
@@ -455,7 +455,7 @@ async fn test_source_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::source_list(&client, &SourceListParams::default()).await.unwrap();
+    let result = papers_core::api::source_list(&client, &SourceListParams::default()).await.unwrap();
     let text = papers_cli_format::format_source_list(&result);
 
     assert!(text.contains("Nature"));
@@ -474,7 +474,7 @@ async fn test_source_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let source = papers::api::source_get(&client, "S1", &GetParams::default()).await.unwrap();
+    let source = papers_core::api::source_get(&client, "S1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_source_get(&source);
 
     assert!(text.contains("Nature"));
@@ -491,7 +491,7 @@ async fn test_institution_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::institution_list(&client, &InstitutionListParams::default()).await.unwrap();
+    let result = papers_core::api::institution_list(&client, &InstitutionListParams::default()).await.unwrap();
     let text = papers_cli_format::format_institution_list(&result);
 
     assert!(text.contains("MIT"));
@@ -510,7 +510,7 @@ async fn test_institution_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let inst = papers::api::institution_get(&client, "I1", &GetParams::default()).await.unwrap();
+    let inst = papers_core::api::institution_get(&client, "I1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_institution_get(&inst);
 
     assert!(text.contains("MIT"));
@@ -528,7 +528,7 @@ async fn test_topic_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::topic_list(&client, &TopicListParams::default()).await.unwrap();
+    let result = papers_core::api::topic_list(&client, &TopicListParams::default()).await.unwrap();
     let text = papers_cli_format::format_topic_list(&result);
 
     assert!(text.contains("Machine Learning"));
@@ -547,7 +547,7 @@ async fn test_topic_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let topic = papers::api::topic_get(&client, "T1", &GetParams::default()).await.unwrap();
+    let topic = papers_core::api::topic_get(&client, "T1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_topic_get(&topic);
 
     assert!(text.contains("Machine Learning"));
@@ -564,7 +564,7 @@ async fn test_publisher_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::publisher_list(&client, &PublisherListParams::default()).await.unwrap();
+    let result = papers_core::api::publisher_list(&client, &PublisherListParams::default()).await.unwrap();
     let text = papers_cli_format::format_publisher_list(&result);
 
     assert!(text.contains("Elsevier"));
@@ -582,7 +582,7 @@ async fn test_publisher_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let pub_ = papers::api::publisher_get(&client, "P1", &GetParams::default()).await.unwrap();
+    let pub_ = papers_core::api::publisher_get(&client, "P1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_publisher_get(&pub_);
 
     assert!(text.contains("Elsevier"));
@@ -599,7 +599,7 @@ async fn test_funder_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::funder_list(&client, &FunderListParams::default()).await.unwrap();
+    let result = papers_core::api::funder_list(&client, &FunderListParams::default()).await.unwrap();
     let text = papers_cli_format::format_funder_list(&result);
 
     assert!(text.contains("NIH"));
@@ -617,7 +617,7 @@ async fn test_funder_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let funder = papers::api::funder_get(&client, "F1", &GetParams::default()).await.unwrap();
+    let funder = papers_core::api::funder_get(&client, "F1", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_funder_get(&funder);
 
     assert!(text.contains("NIH"));
@@ -635,7 +635,7 @@ async fn test_work_autocomplete_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::work_autocomplete(&client, "machine").await.unwrap();
+    let result = papers_core::api::work_autocomplete(&client, "machine").await.unwrap();
     let text = papers_cli_format::format_autocomplete(&result);
 
     assert!(text.contains("Machine Learning Paper"));
@@ -665,7 +665,7 @@ async fn test_api_error_returns_clean_message() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::work_get(&client, "NOTFOUND", &GetParams::default()).await;
+    let result = papers_core::api::work_get(&client, "NOTFOUND", &GetParams::default()).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -685,7 +685,7 @@ async fn test_domain_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::domain_list(&client, &DomainListParams::default()).await.unwrap();
+    let result = papers_core::api::domain_list(&client, &DomainListParams::default()).await.unwrap();
     let text = papers_cli_format::format_domain_list(&result);
 
     assert!(text.contains("Physical Sciences"));
@@ -703,7 +703,7 @@ async fn test_domain_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let domain = papers::api::domain_get(&client, "3", &GetParams::default()).await.unwrap();
+    let domain = papers_core::api::domain_get(&client, "3", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_domain_get(&domain);
 
     assert!(text.contains("Physical Sciences"));
@@ -723,7 +723,7 @@ async fn test_field_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::field_list(&client, &FieldListParams::default()).await.unwrap();
+    let result = papers_core::api::field_list(&client, &FieldListParams::default()).await.unwrap();
     let text = papers_cli_format::format_field_list(&result);
 
     assert!(text.contains("Computer Science"));
@@ -741,7 +741,7 @@ async fn test_field_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let field = papers::api::field_get(&client, "17", &GetParams::default()).await.unwrap();
+    let field = papers_core::api::field_get(&client, "17", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_field_get(&field);
 
     assert!(text.contains("Computer Science"));
@@ -761,7 +761,7 @@ async fn test_subfield_list_text() {
         .await;
 
     let client = make_client(&mock);
-    let result = papers::api::subfield_list(&client, &SubfieldListParams::default()).await.unwrap();
+    let result = papers_core::api::subfield_list(&client, &SubfieldListParams::default()).await.unwrap();
     let text = papers_cli_format::format_subfield_list(&result);
 
     assert!(text.contains("Artificial Intelligence"));
@@ -779,7 +779,7 @@ async fn test_subfield_get_text() {
         .await;
 
     let client = make_client(&mock);
-    let subfield = papers::api::subfield_get(&client, "1702", &GetParams::default()).await.unwrap();
+    let subfield = papers_core::api::subfield_get(&client, "1702", &GetParams::default()).await.unwrap();
     let text = papers_cli_format::format_subfield_get(&subfield);
 
     assert!(text.contains("Artificial Intelligence"));
@@ -814,7 +814,7 @@ async fn test_work_list_year_flag() {
         year: Some(">2020".to_string()),
         ..Default::default()
     };
-    let result = papers::api::work_list(&client, &params).await;
+    let result = papers_core::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
 
@@ -833,7 +833,7 @@ async fn test_work_list_citations_flag() {
         citations: Some(">100".to_string()),
         ..Default::default()
     };
-    let result = papers::api::work_list(&client, &params).await;
+    let result = papers_core::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
 
@@ -852,7 +852,7 @@ async fn test_work_list_author_id_flag() {
         author: Some("A5083138872".to_string()),
         ..Default::default()
     };
-    let result = papers::api::work_list(&client, &params).await;
+    let result = papers_core::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
 
@@ -880,7 +880,7 @@ async fn test_work_list_publisher_search_flag() {
         publisher: Some("acm".to_string()),
         ..Default::default()
     };
-    let result = papers::api::work_list(&client, &params).await;
+    let result = papers_core::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
 
@@ -900,7 +900,7 @@ async fn test_work_list_combined_filter_and_year() {
         filter: Some("is_oa:true".to_string()),
         ..Default::default()
     };
-    let result = papers::api::work_list(&client, &params).await;
+    let result = papers_core::api::work_list(&client, &params).await;
     assert!(result.is_ok());
 }
 
@@ -912,7 +912,7 @@ async fn test_work_list_overlap_error() {
         filter: Some("publication_year:>2020".to_string()),
         ..Default::default()
     };
-    let result = papers::api::work_list(&client, &params).await;
+    let result = papers_core::api::work_list(&client, &params).await;
     assert!(result.is_err());
     let err = result.err().unwrap().to_string();
     assert!(err.contains("year"));
@@ -921,12 +921,12 @@ async fn test_work_list_overlap_error() {
 
 // Format functions exposed for testing (re-use from main crate's format module)
 mod papers_cli_format {
-    use papers::summary::{
+    use papers_core::summary::{
         AuthorSummary, DomainSummary, FieldSummary, FunderSummary, InstitutionSummary,
         PublisherSummary, SlimListResponse, SourceSummary, SubfieldSummary, TopicSummary,
         WorkSummary,
     };
-    use papers::{
+    use papers_core::{
         Author, AutocompleteResponse, Domain, Field, Funder, Institution, ListMeta, Publisher,
         Source, Subfield, Topic, Work,
     };

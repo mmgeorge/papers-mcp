@@ -1044,7 +1044,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "papers"
+name = "papers-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "papers-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
+name = "papers-core"
 version = "0.1.0"
 dependencies = [
  "papers-openalex",
@@ -1056,22 +1068,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "papers-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "papers",
- "serde",
- "serde_json",
- "tokio",
- "wiremock",
-]
-
-[[package]]
 name = "papers-mcp"
 version = "0.1.0"
 dependencies = [
- "papers",
+ "papers-core",
  "rmcp",
  "schemars",
  "serde",

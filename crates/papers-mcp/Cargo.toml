@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-papers.workspace = true
+papers-core.workspace = true
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true

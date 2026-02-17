@@ -1,5 +1,5 @@
-use papers::api;
-use papers::{
+use papers_core::api;
+use papers_core::{
     AuthorListParams, DomainListParams, FieldListParams, FindWorksParams, FunderListParams,
     GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams, SourceListParams,
     SubfieldListParams, TopicListParams, WorkListParams,

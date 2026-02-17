@@ -1,4 +1,4 @@
-use papers::{DiskCache, OpenAlexClient};
+use papers_core::{DiskCache, OpenAlexClient};
 use std::time::Duration;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -63,7 +63,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/works/filter-works
     #[tool]
     pub async fn work_list(&self, Parameters(params): Parameters<WorkListToolParams>) -> Result<String, String> {
-        json_result(papers::api::work_list(&self.client, &params.into_work_list_params()).await)
+        json_result(papers_core::api::work_list(&self.client, &params.into_work_list_params()).await)
     }
 
     /// Search, filter, and paginate author profiles. 110M+ records.
@@ -71,7 +71,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/authors/filter-authors
     #[tool]
     pub async fn author_list(&self, Parameters(params): Parameters<AuthorListToolParams>) -> Result<String, String> {
-        json_result(papers::api::author_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::author_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate publishing venues (journals, repositories, conferences).
@@ -79,7 +79,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/sources/filter-sources
     #[tool]
     pub async fn source_list(&self, Parameters(params): Parameters<SourceListToolParams>) -> Result<String, String> {
-        json_result(papers::api::source_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::source_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate research institutions and organizations.
@@ -87,7 +87,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/institutions/filter-institutions
     #[tool]
     pub async fn institution_list(&self, Parameters(params): Parameters<InstitutionListToolParams>) -> Result<String, String> {
-        json_result(papers::api::institution_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::institution_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate research topics (3-level hierarchy: domain > field > subfield > topic).
@@ -95,7 +95,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/topics/filter-topics
     #[tool]
     pub async fn topic_list(&self, Parameters(params): Parameters<TopicListToolParams>) -> Result<String, String> {
-        json_result(papers::api::topic_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::topic_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate publishing organizations (e.g. Elsevier, Springer Nature).
@@ -103,7 +103,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/publishers/filter-publishers
     #[tool]
     pub async fn publisher_list(&self, Parameters(params): Parameters<PublisherListToolParams>) -> Result<String, String> {
-        json_result(papers::api::publisher_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::publisher_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate funding organizations (e.g. NIH, NSF, ERC).
@@ -111,7 +111,7 @@ impl PapersMcp {
     /// Advanced filtering: https://docs.openalex.org/api-entities/funders/filter-funders
     #[tool]
     pub async fn funder_list(&self, Parameters(params): Parameters<FunderListToolParams>) -> Result<String, String> {
-        json_result(papers::api::funder_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::funder_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate research domains (broadest level of topic hierarchy). 4 domains total.
@@ -119,7 +119,7 @@ impl PapersMcp {
     /// Filtering: https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists
     #[tool]
     pub async fn domain_list(&self, Parameters(params): Parameters<DomainListToolParams>) -> Result<String, String> {
-        json_result(papers::api::domain_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::domain_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate academic fields (second level of topic hierarchy). 26 fields total.
@@ -127,7 +127,7 @@ impl PapersMcp {
     /// Filtering: https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists
     #[tool]
     pub async fn field_list(&self, Parameters(params): Parameters<FieldListToolParams>) -> Result<String, String> {
-        json_result(papers::api::field_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::field_list(&self.client, &params.into_entity_params()).await)
     }
 
     /// Search, filter, and paginate research subfields (third level of topic hierarchy). ~252 subfields total.
@@ -135,7 +135,7 @@ impl PapersMcp {
     /// Filtering: https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists
     #[tool]
     pub async fn subfield_list(&self, Parameters(params): Parameters<SubfieldListToolParams>) -> Result<String, String> {
-        json_result(papers::api::subfield_list(&self.client, &params.into_entity_params()).await)
+        json_result(papers_core::api::subfield_list(&self.client, &params.into_entity_params()).await)
     }
 
     // ── Get tools ────────────────────────────────────────────────────────
@@ -143,61 +143,61 @@ impl PapersMcp {
     /// Get a single work by ID (OpenAlex ID, DOI, PMID, or PMCID).
     #[tool]
     pub async fn work_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::work_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::work_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single author by ID (OpenAlex ID or ORCID).
     #[tool]
     pub async fn author_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::author_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::author_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single source by ID (OpenAlex ID or ISSN).
     #[tool]
     pub async fn source_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::source_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::source_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single institution by ID (OpenAlex ID or ROR).
     #[tool]
     pub async fn institution_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::institution_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::institution_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single topic by OpenAlex ID.
     #[tool]
     pub async fn topic_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::topic_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::topic_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single publisher by OpenAlex ID.
     #[tool]
     pub async fn publisher_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::publisher_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::publisher_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single funder by OpenAlex ID.
     #[tool]
     pub async fn funder_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::funder_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::funder_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single domain by numeric ID (1-4).
     #[tool]
     pub async fn domain_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::domain_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::domain_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single academic field by numeric ID (e.g. 17 for Computer Science).
     #[tool]
     pub async fn field_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::field_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::field_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     /// Get a single research subfield by numeric ID (e.g. 1702 for Artificial Intelligence).
     #[tool]
     pub async fn subfield_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers::api::subfield_get(&self.client, &params.id, &params.into_get_params()).await)
+        json_result(papers_core::api::subfield_get(&self.client, &params.id, &params.into_get_params()).await)
     }
 
     // ── Autocomplete tools ───────────────────────────────────────────────
@@ -205,43 +205,43 @@ impl PapersMcp {
     /// Type-ahead search for works by title. Returns up to 10 results sorted by citation count.
     #[tool]
     pub async fn work_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::work_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::work_autocomplete(&self.client, &params.q).await)
     }
 
     /// Type-ahead search for authors. Returns up to 10 results sorted by citation count.
     #[tool]
     pub async fn author_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::author_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::author_autocomplete(&self.client, &params.q).await)
     }
 
     /// Type-ahead search for sources (journals, repositories). Returns up to 10 results.
     #[tool]
     pub async fn source_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::source_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::source_autocomplete(&self.client, &params.q).await)
     }
 
     /// Type-ahead search for institutions. Returns up to 10 results.
     #[tool]
     pub async fn institution_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::institution_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::institution_autocomplete(&self.client, &params.q).await)
     }
 
     /// Type-ahead search for publishers. Returns up to 10 results.
     #[tool]
     pub async fn publisher_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::publisher_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::publisher_autocomplete(&self.client, &params.q).await)
     }
 
     /// Type-ahead search for funders. Returns up to 10 results.
     #[tool]
     pub async fn funder_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::funder_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::funder_autocomplete(&self.client, &params.q).await)
     }
 
     /// Type-ahead search for subfields. Returns up to 10 results.
     #[tool]
     pub async fn subfield_autocomplete(&self, Parameters(params): Parameters<AutocompleteToolParams>) -> Result<String, String> {
-        json_result(papers::api::subfield_autocomplete(&self.client, &params.q).await)
+        json_result(papers_core::api::subfield_autocomplete(&self.client, &params.q).await)
     }
 
     // ── Semantic search ──────────────────────────────────────────────────
@@ -249,7 +249,7 @@ impl PapersMcp {
     /// AI semantic search for works by conceptual similarity. Requires API key. Uses POST for queries > 2048 chars.
     #[tool]
     pub async fn work_find(&self, Parameters(params): Parameters<FindWorksToolParams>) -> Result<String, String> {
-        json_result(papers::api::work_find(&self.client, &params.into_find_params()).await)
+        json_result(papers_core::api::work_find(&self.client, &params.into_find_params()).await)
     }
 }
 
