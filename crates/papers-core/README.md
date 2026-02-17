@@ -1,4 +1,4 @@
-# papers
+# papers-core
 
 Shared library for querying the [OpenAlex](https://openalex.org) academic research database.
 Used by `papers-mcp` (MCP server) and `papers-cli` (CLI tool).

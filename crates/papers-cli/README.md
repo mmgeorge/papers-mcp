@@ -1,4 +1,4 @@
-# papers
+# papers-cli
 
 [![crates.io](https://img.shields.io/crates/v/papers-cli.svg)](https://crates.io/crates/papers-cli)
 
