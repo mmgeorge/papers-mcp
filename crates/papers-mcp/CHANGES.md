@@ -1,18 +1,58 @@
 # MCP Response Differences vs OpenAlex API
 
-This file documents every place where the MCP server intentionally returns
-**different or reduced data** compared to the raw OpenAlex REST API.
+This file documents every place where the MCP server intentionally differs
+from the raw OpenAlex REST API — whether in tool naming, response shape, or
+returned fields.
 
-The guiding principle: list endpoints return slim summary structs to reduce
-context window consumption for LLM callers. Single-entity (`get_*`) endpoints
-pass the full API response through unchanged.
+The guiding principles:
+- Tool names follow `{entity}_{verb}` (e.g. `work_list`, `work_get`) rather than the API's URL structure.
+- List tools return slim summary structs to reduce context window consumption for LLM callers.
+- Single-entity get tools pass the full API response through unchanged.
+
+---
+
+## Tool naming convention
+
+**Implemented in:** `src/server.rs` — method names
+
+MCP tool names follow `{entity_singular}_{verb}` rather than the
+`{verb}_{entity_plural}` pattern used by the raw OpenAlex API URL paths.
+
+| MCP tool name | OpenAlex API path |
+|---|---|
+| `work_list` | `GET /works` |
+| `author_list` | `GET /authors` |
+| `source_list` | `GET /sources` |
+| `institution_list` | `GET /institutions` |
+| `topic_list` | `GET /topics` |
+| `publisher_list` | `GET /publishers` |
+| `funder_list` | `GET /funders` |
+| `work_get` | `GET /works/{id}` |
+| `author_get` | `GET /authors/{id}` |
+| `source_get` | `GET /sources/{id}` |
+| `institution_get` | `GET /institutions/{id}` |
+| `topic_get` | `GET /topics/{id}` |
+| `publisher_get` | `GET /publishers/{id}` |
+| `funder_get` | `GET /funders/{id}` |
+| `work_autocomplete` | `GET /autocomplete/works` |
+| `author_autocomplete` | `GET /autocomplete/authors` |
+| `source_autocomplete` | `GET /autocomplete/sources` |
+| `institution_autocomplete` | `GET /autocomplete/institutions` |
+| `concept_autocomplete` | `GET /autocomplete/concepts` |
+| `publisher_autocomplete` | `GET /autocomplete/publishers` |
+| `funder_autocomplete` | `GET /autocomplete/funders` |
+| `work_find` | `GET /find/works` (or `POST` for long queries) |
+
+**Reason:** Grouping by entity first makes the tool list sort and scan naturally
+by subject — all `work_*` tools appear together, all `author_*` tools together,
+etc. — rather than by verb, which clusters unrelated entities.
 
 ---
 
 ## List endpoints — slim summary structs
 
 **Implemented in:** `src/summary.rs`
-**Applied in:** `src/server.rs` — all 7 `list_*` tools use `summary_list_result()`
+**Applied in:** `src/server.rs` — all 7 `*_list` tools use `summary_list_result()`
 
 ### Response shape change
 
@@ -154,19 +194,19 @@ objects or IDs), `alternate_titles`, `counts_by_year`, `roles`, `summary_stats`,
 
 ---
 
-## Get endpoints — no changes
+## Get tools — no response changes
 
-All 7 `get_*` tools (`get_work`, `get_author`, `get_source`, `get_institution`,
-`get_topic`, `get_publisher`, `get_funder`) return the full deserialized API
+All 7 `*_get` tools (`work_get`, `author_get`, `source_get`, `institution_get`,
+`topic_get`, `publisher_get`, `funder_get`) return the full deserialized API
 response. Use these when full entity data is needed after identifying items
-via a list tool.
+via a `*_list` tool.
 
-## Autocomplete endpoints — no changes
+## Autocomplete tools — no response changes
 
-All 7 `autocomplete_*` tools return the full `AutocompleteResponse`. These
+All 7 `*_autocomplete` tools return the full `AutocompleteResponse`. These
 already return compact 10-result lists, so no slimming is needed.
 
-## `find_works` — no changes
+## `work_find` — no response changes
 
 Returns the full `FindWorksResponse` including similarity scores.
 

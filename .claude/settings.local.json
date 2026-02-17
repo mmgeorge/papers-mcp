@@ -10,7 +10,10 @@
       "Bash(find:*)",
       "WebFetch(domain:*)",
       "WebSearch",
-      "mcp__papers-mcp__*"
+      "mcp__papers-mcp__*",
+      "mcp__papers-mcp__list_authors",
+      "mcp__papers-mcp__list_institutions",
+      "mcp__papers-mcp__work_list"
     ]
   },
   "enableAllProjectMcpServers": true,

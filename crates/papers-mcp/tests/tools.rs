@@ -70,7 +70,7 @@ async fn test_list_works_tool() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let result = server.list_works(Parameters(params)).await;
+    let result = server.work_list(Parameters(params)).await;
     let text = result.unwrap();
     assert!(text.contains("\"count\": 42"));
 }
@@ -92,7 +92,7 @@ async fn test_list_works_with_params() {
         "per_page": 5
     }))
     .unwrap();
-    let result = server.list_works(Parameters(params)).await;
+    let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
 }
 
@@ -109,7 +109,7 @@ async fn test_get_work_tool() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({"id": "W2741809807"})).unwrap();
-    let result = server.get_work(Parameters(params)).await;
+    let result = server.work_get(Parameters(params)).await;
     let text = result.unwrap();
     assert!(text.contains("The state of OA"));
 }
@@ -128,7 +128,7 @@ async fn test_get_work_with_select() {
     let params =
         serde_json::from_value(serde_json::json!({"id": "W123", "select": "id,display_name"}))
             .unwrap();
-    let result = server.get_work(Parameters(params)).await;
+    let result = server.work_get(Parameters(params)).await;
     assert!(result.is_ok());
 }
 
@@ -146,7 +146,7 @@ async fn test_autocomplete_works_tool() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({"q": "machine"})).unwrap();
-    let result = server.autocomplete_works(Parameters(params)).await;
+    let result = server.work_autocomplete(Parameters(params)).await;
     let text = result.unwrap();
     assert!(text.contains("Test Work"));
 }
@@ -165,7 +165,7 @@ async fn test_find_works_get() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({"query": "drug discovery"})).unwrap();
-    let result = server.find_works(Parameters(params)).await;
+    let result = server.work_find(Parameters(params)).await;
     assert!(result.is_ok());
 }
 
@@ -181,7 +181,7 @@ async fn test_find_works_post_for_long_query() {
     let long_query = "a ".repeat(1500); // >2048 chars
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({"query": long_query})).unwrap();
-    let result = server.find_works(Parameters(params)).await;
+    let result = server.work_find(Parameters(params)).await;
     assert!(result.is_ok());
 }
 
@@ -198,7 +198,7 @@ async fn test_api_error_returns_error_result() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({"id": "invalid"})).unwrap();
-    let result = server.get_work(Parameters(params)).await;
+    let result = server.work_get(Parameters(params)).await;
 
     // API errors should be returned as Err, not panics
     assert!(result.is_err());
@@ -222,28 +222,28 @@ fn test_all_tool_names_present() {
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
 
     let expected = [
-        "list_works",
-        "list_authors",
-        "list_sources",
-        "list_institutions",
-        "list_topics",
-        "list_publishers",
-        "list_funders",
-        "get_work",
-        "get_author",
-        "get_source",
-        "get_institution",
-        "get_topic",
-        "get_publisher",
-        "get_funder",
-        "autocomplete_works",
-        "autocomplete_authors",
-        "autocomplete_sources",
-        "autocomplete_institutions",
-        "autocomplete_concepts",
-        "autocomplete_publishers",
-        "autocomplete_funders",
-        "find_works",
+        "work_list",
+        "author_list",
+        "source_list",
+        "institution_list",
+        "topic_list",
+        "publisher_list",
+        "funder_list",
+        "work_get",
+        "author_get",
+        "source_get",
+        "institution_get",
+        "topic_get",
+        "publisher_get",
+        "funder_get",
+        "work_autocomplete",
+        "author_autocomplete",
+        "source_autocomplete",
+        "institution_autocomplete",
+        "concept_autocomplete",
+        "publisher_autocomplete",
+        "funder_autocomplete",
+        "work_find",
     ];
 
     for name in &expected {
@@ -702,7 +702,7 @@ async fn test_list_works_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_works(Parameters(params)).await.unwrap();
+    let text = server.work_list(Parameters(params)).await.unwrap();
 
     // Essential fields present
     assert!(text.contains("Bitonic Sort"), "title missing");
@@ -731,7 +731,7 @@ async fn test_list_authors_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_authors(Parameters(params)).await.unwrap();
+    let text = server.author_list(Parameters(params)).await.unwrap();
 
     assert!(text.contains("Alice"));
     assert!(text.contains("h_index"));
@@ -751,7 +751,7 @@ async fn test_list_sources_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_sources(Parameters(params)).await.unwrap();
+    let text = server.source_list(Parameters(params)).await.unwrap();
 
     assert!(text.contains("Nature"));
     assert!(text.contains("h_index"));
@@ -771,7 +771,7 @@ async fn test_list_institutions_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_institutions(Parameters(params)).await.unwrap();
+    let text = server.institution_list(Parameters(params)).await.unwrap();
 
     assert!(text.contains("Harvard University"));
     assert!(text.contains("Cambridge"));
@@ -791,7 +791,7 @@ async fn test_list_topics_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_topics(Parameters(params)).await.unwrap();
+    let text = server.topic_list(Parameters(params)).await.unwrap();
 
     assert!(text.contains("Machine Learning"));
     assert!(text.contains("Artificial Intelligence"));
@@ -811,7 +811,7 @@ async fn test_list_publishers_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_publishers(Parameters(params)).await.unwrap();
+    let text = server.publisher_list(Parameters(params)).await.unwrap();
 
     assert!(text.contains("Springer Nature"));
     assert!(text.contains("hierarchy_level"));
@@ -831,7 +831,7 @@ async fn test_list_funders_returns_slim_response() {
 
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
-    let text = server.list_funders(Parameters(params)).await.unwrap();
+    let text = server.funder_list(Parameters(params)).await.unwrap();
 
     assert!(text.contains("National Institutes of Health"));
     assert!(text.contains("awards_count"));
