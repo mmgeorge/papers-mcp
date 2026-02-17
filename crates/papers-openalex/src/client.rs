@@ -1,3 +1,4 @@
+use crate::cache::DiskCache;
 use crate::error::{OpenAlexError, Result};
 use crate::params::{FindWorksParams, GetParams, ListParams};
 use crate::response::{AutocompleteResponse, FindWorksResponse, ListResponse};
@@ -77,6 +78,7 @@ pub struct OpenAlexClient {
     http: reqwest::Client,
     base_url: String,
     api_key: Option<String>,
+    cache: Option<DiskCache>,
 }
 
 impl Default for OpenAlexClient {
@@ -99,6 +101,7 @@ impl OpenAlexClient {
             http: reqwest::Client::new(),
             base_url: DEFAULT_BASE_URL.to_string(),
             api_key: std::env::var("OPENALEX_KEY").ok(),
+            cache: None,
         }
     }
 
@@ -113,6 +116,7 @@ impl OpenAlexClient {
             http: reqwest::Client::new(),
             base_url: DEFAULT_BASE_URL.to_string(),
             api_key: Some(api_key.into()),
+            cache: None,
         }
     }
 
@@ -125,6 +129,20 @@ impl OpenAlexClient {
     /// ```
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into();
+        self
+    }
+
+    /// Enable disk caching of successful responses.
+    ///
+    /// ```no_run
+    /// use papers_openalex::{OpenAlexClient, DiskCache};
+    /// use std::time::Duration;
+    ///
+    /// let cache = DiskCache::default_location(Duration::from_secs(600)).unwrap();
+    /// let client = OpenAlexClient::new().with_cache(cache);
+    /// ```
+    pub fn with_cache(mut self, cache: DiskCache) -> Self {
+        self.cache = Some(cache);
         self
     }
 
@@ -143,6 +161,11 @@ impl OpenAlexClient {
     ) -> Result<T> {
         self.append_api_key(&mut query);
         let url = format!("{}{}", self.base_url, path);
+        if let Some(cache) = &self.cache {
+            if let Some(text) = cache.get(&url, &query, None) {
+                return serde_json::from_str(&text).map_err(OpenAlexError::Json);
+            }
+        }
         let resp = self.http.get(&url).query(&query).send().await?;
         let status = resp.status();
         if !status.is_success() {
@@ -153,6 +176,9 @@ impl OpenAlexClient {
             });
         }
         let text = resp.text().await?;
+        if let Some(cache) = &self.cache {
+            cache.set(&url, &query, None, &text);
+        }
         serde_json::from_str(&text).map_err(OpenAlexError::Json)
     }
 
@@ -164,6 +190,12 @@ impl OpenAlexClient {
     ) -> Result<T> {
         self.append_api_key(&mut query);
         let url = format!("{}{}", self.base_url, path);
+        let body_str = body.to_string();
+        if let Some(cache) = &self.cache {
+            if let Some(text) = cache.get(&url, &query, Some(&body_str)) {
+                return serde_json::from_str(&text).map_err(OpenAlexError::Json);
+            }
+        }
         let resp = self.http.post(&url).query(&query).json(&body).send().await?;
         let status = resp.status();
         if !status.is_success() {
@@ -174,6 +206,9 @@ impl OpenAlexClient {
             });
         }
         let text = resp.text().await?;
+        if let Some(cache) = &self.cache {
+            cache.set(&url, &query, Some(&body_str), &text);
+        }
         serde_json::from_str(&text).map_err(OpenAlexError::Json)
     }
 
@@ -1014,6 +1049,8 @@ impl OpenAlexClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cache::DiskCache;
+    use std::time::Duration;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1722,5 +1759,108 @@ mod tests {
             OpenAlexError::Api { status, .. } => assert_eq!(status, 403),
             _ => panic!("Expected Api error"),
         }
+    }
+
+    // ── Cache integration tests ──────────────────────────────────────
+
+    fn temp_cache() -> DiskCache {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let mut h = DefaultHasher::new();
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut h);
+        std::thread::current().id().hash(&mut h);
+        let dir = std::env::temp_dir()
+            .join("papers-test-cache")
+            .join(format!("{:x}", h.finish()));
+        DiskCache::new(dir, Duration::from_secs(600)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_cache_hit_avoids_second_request() {
+        let server = MockServer::start().await;
+        let mock = Mock::given(method("GET"))
+            .and(path("/works"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+            .expect(1)
+            .named("list_works")
+            .mount_as_scoped(&server)
+            .await;
+        let client = OpenAlexClient::new()
+            .with_base_url(server.uri())
+            .with_cache(temp_cache());
+        // First call hits the server
+        let resp1 = client.list_works(&ListParams::default()).await.unwrap();
+        assert_eq!(resp1.meta.count, 1);
+        // Second call should come from cache (mock expects exactly 1 hit)
+        let resp2 = client.list_works(&ListParams::default()).await.unwrap();
+        assert_eq!(resp2.meta.count, 1);
+        drop(mock); // verify expectations
+    }
+
+    #[tokio::test]
+    async fn test_cache_different_params_separate_entries() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/works"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = OpenAlexClient::new()
+            .with_base_url(server.uri())
+            .with_cache(temp_cache());
+        let p1 = ListParams { search: Some("a".into()), ..Default::default() };
+        let p2 = ListParams { search: Some("b".into()), ..Default::default() };
+        client.list_works(&p1).await.unwrap();
+        client.list_works(&p2).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_cache_error_not_cached() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/works/bad"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("error"))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = OpenAlexClient::new()
+            .with_base_url(server.uri())
+            .with_cache(temp_cache());
+        let _ = client.get_work("bad", &GetParams::default()).await;
+        let _ = client.get_work("bad", &GetParams::default()).await;
+    }
+
+    #[tokio::test]
+    async fn test_no_cache_always_hits_server() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/works"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await; // no cache
+        client.list_works(&ListParams::default()).await.unwrap();
+        client.list_works(&ListParams::default()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_cache_post_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/find/works"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(minimal_find_json()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = OpenAlexClient::with_api_key("k")
+            .with_base_url(server.uri())
+            .with_cache(temp_cache());
+        let params = FindWorksParams::builder().query("test").build();
+        client.find_works_post(&params).await.unwrap();
+        // Second call served from cache
+        client.find_works_post(&params).await.unwrap();
     }
 }

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bon.workspace = true
+dirs = "6"
 thiserror.workspace = true
 reqwest.workspace = true
 serde.workspace = true

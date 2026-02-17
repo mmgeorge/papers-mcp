@@ -7,7 +7,8 @@ use cli::{
     FunderCommand, InstitutionCommand, PublisherCommand, SourceCommand, SubfieldCommand,
     TopicCommand, WorkCommand, WorkFilterArgs,
 };
-use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient, WorkListParams};
+use papers::{DiskCache, FindWorksParams, GetParams, ListParams, OpenAlexClient, WorkListParams};
+use std::time::Duration;
 
 fn list_params_from_args(args: &cli::ListArgs) -> ListParams {
     ListParams {
@@ -60,7 +61,10 @@ fn exit_err(msg: &str) -> ! {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let client = OpenAlexClient::new();
+    let mut client = OpenAlexClient::new();
+    if let Ok(cache) = DiskCache::default_location(Duration::from_secs(600)) {
+        client = client.with_cache(cache);
+    }
 
     match cli.entity {
         EntityCommand::Work { cmd } => match cmd {

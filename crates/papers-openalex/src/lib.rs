@@ -57,12 +57,14 @@
 //! - **2 semantic search endpoints** — AI-powered similarity search via GET or
 //!   POST
 
+pub mod cache;
 pub mod client;
 pub mod error;
 pub mod params;
 pub mod response;
 pub mod types;
 
+pub use cache::DiskCache;
 pub use client::OpenAlexClient;
 pub use error::{OpenAlexError, Result};
 pub use params::{FindWorksParams, GetParams, ListParams};

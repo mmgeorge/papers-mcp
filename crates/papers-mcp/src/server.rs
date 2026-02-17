@@ -1,4 +1,5 @@
-use papers::OpenAlexClient;
+use papers::{DiskCache, OpenAlexClient};
+use std::time::Duration;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -21,7 +22,10 @@ impl Default for PapersMcp {
 
 impl PapersMcp {
     pub fn new() -> Self {
-        let client = OpenAlexClient::new();
+        let mut client = OpenAlexClient::new();
+        if let Ok(cache) = DiskCache::default_location(Duration::from_secs(600)) {
+            client = client.with_cache(cache);
+        }
         Self {
             client,
             tool_router: Self::tool_router(),
