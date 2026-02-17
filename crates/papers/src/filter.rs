@@ -428,13 +428,14 @@ entity_list_params!(SubfieldListParams, aliases: SUBFIELD_ALIASES, fields: [
 // ── Helper functions ─────────────────────────────────────────────────────
 
 /// Returns true if `value` looks like an OpenAlex ID for the given entity type.
-fn is_openalex_id(value: &str, entity_type: &str) -> bool {
+pub(crate) fn is_openalex_id(value: &str, entity_type: &str) -> bool {
     // Full URL: https://openalex.org/...
     if value.starts_with("https://openalex.org/") {
         return true;
     }
 
     match entity_type {
+        "works" => is_prefixed_id(value, 'W'),
         "authors" => is_prefixed_id(value, 'A'),
         "topics" => is_prefixed_id(value, 'T'),
         "sources" => is_prefixed_id(value, 'S'),
@@ -472,7 +473,7 @@ fn is_hierarchy_id(value: &str, prefix: &str) -> bool {
 /// Normalize an ID to short form:
 /// 1. Strip `https://openalex.org/` prefix if present.
 /// 2. For hierarchy entities with bare digits, prepend the path prefix.
-fn normalize_id(raw_id: &str, entity_type: &str) -> String {
+pub(crate) fn normalize_id(raw_id: &str, entity_type: &str) -> String {
     let id = raw_id
         .strip_prefix("https://openalex.org/")
         .unwrap_or(raw_id);
@@ -495,7 +496,7 @@ fn normalize_id(raw_id: &str, entity_type: &str) -> String {
 ///
 /// For most entities: `GET /{entity_type}?filter=display_name.search:{query}&sort=cited_by_count:desc&per_page=1&select=id`
 /// For publishers: `GET /publishers?search={query}&sort=cited_by_count:desc&per_page=1&select=id`
-async fn resolve_entity_id(
+pub(crate) async fn resolve_entity_id(
     client: &OpenAlexClient,
     query: &str,
     entity_type: &'static str,
@@ -521,6 +522,7 @@ async fn resolve_entity_id(
 
     // Use serde_json::Value for generic deserialization since we only need the ID
     let result: papers_openalex::ListResponse<serde_json::Value> = match entity_type {
+        "works" => transmute_list(client.list_works(&params).await?),
         "authors" => transmute_list(client.list_authors(&params).await?),
         "topics" => transmute_list(client.list_topics(&params).await?),
         "domains" => transmute_list(client.list_domains(&params).await?),
@@ -529,6 +531,7 @@ async fn resolve_entity_id(
         "publishers" => transmute_list(client.list_publishers(&params).await?),
         "sources" => transmute_list(client.list_sources(&params).await?),
         "institutions" => transmute_list(client.list_institutions(&params).await?),
+        "funders" => transmute_list(client.list_funders(&params).await?),
         _ => unreachable!("unknown entity type: {entity_type}"),
     };
 
@@ -548,7 +551,7 @@ async fn resolve_entity_id(
 }
 
 /// Convert a typed ListResponse into a ListResponse<serde_json::Value>.
-fn transmute_list<T: serde::Serialize>(
+pub(crate) fn transmute_list<T: serde::Serialize>(
     resp: papers_openalex::ListResponse<T>,
 ) -> papers_openalex::ListResponse<serde_json::Value> {
     papers_openalex::ListResponse {

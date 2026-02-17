@@ -667,13 +667,120 @@ async fn test_subfield_get_returns_full() {
 #[tokio::test]
 async fn test_api_error_propagated() {
     let mock = MockServer::start().await;
+    // W99999 is a valid OpenAlex ID format — passes through directly, hits /works/W99999
     Mock::given(method("GET"))
-        .and(path("/works/INVALID"))
+        .and(path("/works/W99999"))
         .respond_with(ResponseTemplate::new(404).set_body_string(r#"{"error": "not found"}"#))
         .mount(&mock)
         .await;
 
     let client = make_client(&mock);
-    let result = api::work_get(&client, "INVALID", &GetParams::default()).await;
+    let result = api::work_get(&client, "W99999", &GetParams::default()).await;
     assert!(result.is_err());
+}
+
+// ── Smart ID resolution: search-then-get flow ─────────────────────────────
+
+fn slim_list_response(id: &str, name: &str) -> String {
+    format!(
+        r#"{{"meta": {{"count": 1, "db_response_time_ms": 5, "page": 1, "per_page": 1, "next_cursor": null, "groups_count": null}}, "results": [{{"id": "{id}", "display_name": "{name}"}}], "group_by": []}}"#
+    )
+}
+
+#[tokio::test]
+async fn test_work_get_resolves_search_query() {
+    let mock = MockServer::start().await;
+    // First call: search for work by name
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            slim_list_response("https://openalex.org/W1", "A Great Paper")
+        ))
+        .mount(&mock)
+        .await;
+    // Second call: fetch the resolved ID
+    Mock::given(method("GET"))
+        .and(path("/works/W1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let work = api::work_get(&client, "A Great Paper", &GetParams::default()).await.unwrap();
+    assert_eq!(work.display_name, Some("A Great Paper".to_string()));
+}
+
+#[tokio::test]
+async fn test_author_get_resolves_search_query() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/authors"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            slim_list_response("https://openalex.org/A1", "Alice Smith")
+        ))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/authors/A1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(author_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let author = api::author_get(&client, "Alice Smith", &GetParams::default()).await.unwrap();
+    assert_eq!(author.display_name, Some("Alice Smith".to_string()));
+}
+
+#[tokio::test]
+async fn test_source_get_resolves_search_query() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sources"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            slim_list_response("https://openalex.org/S1", "Nature")
+        ))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/sources/S1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(source_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let source = api::source_get(&client, "Nature", &GetParams::default()).await.unwrap();
+    assert_eq!(source.display_name, Some("Nature".to_string()));
+}
+
+#[tokio::test]
+async fn test_work_get_by_doi_passes_through() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works/https://doi.org/10.1109/test"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let work = api::work_get(&client, "https://doi.org/10.1109/test", &GetParams::default()).await.unwrap();
+    assert_eq!(work.display_name, Some("A Great Paper".to_string()));
+}
+
+#[tokio::test]
+async fn test_work_get_not_found_error() {
+    let mock = MockServer::start().await;
+    // Return empty results for the search
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"{"meta": {"count": 0, "db_response_time_ms": 5, "page": 1, "per_page": 1, "next_cursor": null, "groups_count": null}, "results": [], "group_by": []}"#
+        ))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let result = api::work_get(&client, "nonexistent paper title xyz", &GetParams::default()).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("nonexistent paper title xyz"));
 }
