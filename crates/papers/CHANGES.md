@@ -268,6 +268,38 @@ Returns the full `FindWorksResponse` including similarity scores.
 
 ---
 
+## `work_list` / `work list` — filter aliases
+
+**Implemented in:** `src/filter.rs`
+**Applied in:** `papers-mcp/src/server.rs` (`work_list` tool), `papers-cli/src/main.rs` (`work list` command)
+
+The `work_list` tool and `work list` CLI command accept 9 shorthand filter params
+that resolve to real OpenAlex filter expressions. ID-based filters accept either
+an OpenAlex entity ID or a search string (resolved via the API to the top result
+by citation count).
+
+| Alias param | Resolves to OpenAlex filter key |
+|---|---|
+| `author` | `authorships.author.id` |
+| `topic` | `primary_topic.id` |
+| `domain` | `primary_topic.domain.id` |
+| `field` | `primary_topic.field.id` |
+| `subfield` | `primary_topic.subfield.id` |
+| `publisher` | `primary_location.source.publisher_lineage` |
+| `source` | `primary_location.source.id` |
+| `year` | `publication_year` |
+| `citations` | `cited_by_count` |
+
+**Reason:** Raw OpenAlex filter keys are long and require knowing entity IDs
+upfront. Aliases let callers use natural names (e.g. `--publisher acm` instead
+of `--filter "primary_location.source.publisher_lineage:P4310319798"`). The
+search-to-ID resolution makes one extra API call per search-based alias.
+
+If an alias conflicts with a key already present in the raw `filter` param,
+an error is returned rather than silently overwriting.
+
+---
+
 ## How to update this file
 
 When you intentionally change what the MCP returns relative to the raw API:

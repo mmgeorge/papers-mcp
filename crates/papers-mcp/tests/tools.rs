@@ -1091,3 +1091,281 @@ fn test_tool_params_schema() {
     assert!(props.contains_key("select"));
     assert!(props.contains_key("group_by"));
 }
+
+// ── Work list filter alias tests ─────────────────────────────────────
+
+fn search_result_json(id: &str) -> String {
+    format!(
+        r#"{{
+            "meta": {{"count": 1, "db_response_time_ms": 5, "page": 1, "per_page": 1, "next_cursor": null, "groups_count": null}},
+            "results": [{{"id": "{id}", "display_name": "Test Entity"}}],
+            "group_by": []
+        }}"#
+    )
+}
+
+#[tokio::test]
+async fn test_work_list_with_year_alias() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "publication_year:>2020"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"year": ">2020"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_citations_alias() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "cited_by_count:>100"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"citations": ">100"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_author_id() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "authorships.author.id:A5083138872"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params =
+        serde_json::from_value(serde_json::json!({"author": "A5083138872"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_author_search() {
+    let mock = MockServer::start().await;
+    // Mock the author search resolution
+    Mock::given(method("GET"))
+        .and(path("/authors"))
+        .and(query_param("filter", "display_name.search:einstein"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(search_result_json("https://openalex.org/A5083138872")),
+        )
+        .mount(&mock)
+        .await;
+    // Mock the works list with resolved filter
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "authorships.author.id:A5083138872"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"author": "einstein"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_publisher_search() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/publishers"))
+        .and(query_param("search", "acm"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(search_result_json("https://openalex.org/P4310319798")),
+        )
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param(
+            "filter",
+            "primary_location.source.publisher_lineage:P4310319798",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"publisher": "acm"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_source_search() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sources"))
+        .and(query_param("filter", "display_name.search:siggraph"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(search_result_json("https://openalex.org/S131921510")),
+        )
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param(
+            "filter",
+            "primary_location.source.id:S131921510",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"source": "siggraph"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_topic_id() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "primary_topic.id:T11636"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"topic": "T11636"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_domain_id() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "primary_topic.domain.id:domains/3"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"domain": "3"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_field_id() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "primary_topic.field.id:fields/17"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"field": "17"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_with_subfield_id() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param(
+            "filter",
+            "primary_topic.subfield.id:subfields/1702",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params =
+        serde_json::from_value(serde_json::json!({"subfield": "subfields/1702"})).unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_combined_aliases_and_filter() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param(
+            "filter",
+            "publication_year:2024,cited_by_count:>100,is_oa:true",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_list_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({
+        "year": "2024",
+        "citations": ">100",
+        "filter": "is_oa:true"
+    }))
+    .unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_overlap_error() {
+    let mock = MockServer::start().await;
+
+    let server = make_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({
+        "year": "2024",
+        "filter": "publication_year:>2020"
+    }))
+    .unwrap();
+    let result = server.work_list(Parameters(params)).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("year"));
+    assert!(err.contains("publication_year"));
+}
+
+#[test]
+fn test_work_list_schema_includes_aliases() {
+    use papers_mcp::params::WorkListToolParams;
+    let schema = schemars::schema_for!(WorkListToolParams);
+    let json = serde_json::to_value(&schema).unwrap();
+    let props = json["properties"].as_object().unwrap();
+
+    // Standard list params
+    assert!(props.contains_key("filter"));
+    assert!(props.contains_key("search"));
+    assert!(props.contains_key("sort"));
+    assert!(props.contains_key("per_page"));
+
+    // Alias params
+    assert!(props.contains_key("author"), "missing author");
+    assert!(props.contains_key("topic"), "missing topic");
+    assert!(props.contains_key("domain"), "missing domain");
+    assert!(props.contains_key("field"), "missing field");
+    assert!(props.contains_key("subfield"), "missing subfield");
+    assert!(props.contains_key("publisher"), "missing publisher");
+    assert!(props.contains_key("source"), "missing source");
+    assert!(props.contains_key("year"), "missing year");
+    assert!(props.contains_key("citations"), "missing citations");
+}

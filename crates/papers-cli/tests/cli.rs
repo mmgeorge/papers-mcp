@@ -1,5 +1,5 @@
 use papers::{GetParams, ListParams, OpenAlexClient};
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_client(mock: &MockServer) -> OpenAlexClient {
@@ -781,6 +781,146 @@ async fn test_subfield_get_text() {
     assert!(text.contains("Artificial Intelligence"));
     assert!(text.contains("Computer Science"));
     assert!(text.contains("study of intelligent agents"));
+}
+
+// ── Work filter alias tests ───────────────────────────────────────────────
+
+fn search_result_json(id: &str) -> String {
+    format!(
+        r#"{{
+            "meta": {{"count": 1, "db_response_time_ms": 5, "page": 1, "per_page": 1, "next_cursor": null, "groups_count": null}},
+            "results": [{{"id": "{id}", "display_name": "Test Entity"}}],
+            "group_by": []
+        }}"#
+    )
+}
+
+#[tokio::test]
+async fn test_work_list_year_flag() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "publication_year:>2020"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_list_body()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let aliases = papers::WorkFilterAliases {
+        year: Some(">2020".to_string()),
+        ..Default::default()
+    };
+    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
+    let params = ListParams { filter: resolved, ..Default::default() };
+    let result = papers::api::work_list(&client, &params).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_citations_flag() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "cited_by_count:>100"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_list_body()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let aliases = papers::WorkFilterAliases {
+        citations: Some(">100".to_string()),
+        ..Default::default()
+    };
+    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
+    let params = ListParams { filter: resolved, ..Default::default() };
+    let result = papers::api::work_list(&client, &params).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_author_id_flag() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "authorships.author.id:A5083138872"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_list_body()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let aliases = papers::WorkFilterAliases {
+        author: Some("A5083138872".to_string()),
+        ..Default::default()
+    };
+    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
+    let params = ListParams { filter: resolved, ..Default::default() };
+    let result = papers::api::work_list(&client, &params).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_publisher_search_flag() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/publishers"))
+        .and(query_param("search", "acm"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(search_result_json("https://openalex.org/P4310319798")),
+        )
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "primary_location.source.publisher_lineage:P4310319798"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_list_body()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let aliases = papers::WorkFilterAliases {
+        publisher: Some("acm".to_string()),
+        ..Default::default()
+    };
+    let resolved = papers::resolve_work_filters(&client, &aliases, None).await.unwrap();
+    let params = ListParams { filter: resolved, ..Default::default() };
+    let result = papers::api::work_list(&client, &params).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_combined_filter_and_year() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "publication_year:2024,is_oa:true"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_list_body()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let aliases = papers::WorkFilterAliases {
+        year: Some("2024".to_string()),
+        ..Default::default()
+    };
+    let resolved = papers::resolve_work_filters(&client, &aliases, Some("is_oa:true")).await.unwrap();
+    let params = ListParams { filter: resolved, ..Default::default() };
+    let result = papers::api::work_list(&client, &params).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_list_overlap_error() {
+    let client = OpenAlexClient::new();
+    let aliases = papers::WorkFilterAliases {
+        year: Some("2024".to_string()),
+        ..Default::default()
+    };
+    let result = papers::resolve_work_filters(&client, &aliases, Some("publication_year:>2020")).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("year"));
+    assert!(err.contains("publication_year"));
 }
 
 // Format functions exposed for testing (re-use from main crate's format module)

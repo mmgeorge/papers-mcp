@@ -12,10 +12,12 @@ via `papers::*`.
 ```
 src/
   lib.rs       — pub mod declarations + re-exports from papers-openalex
-  summary.rs   — 7 slim summary structs + From<FullEntity> impls + SlimListResponse
-  api.rs       — 22 async wrapper functions (7 list, 7 get, 7 autocomplete, 1 find)
+  summary.rs   — 10 slim summary structs + From<FullEntity> impls + SlimListResponse
+  api.rs       — 29 async wrapper functions (10 list, 10 get, 8 autocomplete, 1 find)
+  filter.rs    — work filter alias resolution (search strings → entity IDs)
 tests/
-  api.rs       — 21 wiremock tests covering all api functions and CHANGES.md rules
+  api.rs       — 27 wiremock tests covering all api functions and CHANGES.md rules
+  filter.rs    — 11 wiremock tests for filter alias resolution
 CHANGES.md     — documents every intentional difference vs the raw OpenAlex API
 ```
 
@@ -44,6 +46,37 @@ See `CHANGES.md` for exactly which fields are kept and why.
 | `work_find` | 1 | `Result<FindWorksResponse, OpenAlexError>` |
 
 `work_find` automatically selects POST when `params.query.len() > 2048`.
+
+### filter.rs
+
+Contains the multi-step filter resolution logic used by `work_list` in both MCP
+and CLI. This is the only module in the `papers` crate that makes API calls
+itself (to resolve search strings to entity IDs).
+
+**Resolution flow for ID-based aliases (author, topic, domain, field, subfield, publisher, source):**
+
+1. Split the alias value on `|` to get individual segments
+2. For each segment, detect if it's an OpenAlex ID or a search string:
+   - IDs: full URLs (`https://openalex.org/...`), prefixed short IDs (`A123`, `P456`, `T789`, `S012`),
+     hierarchy paths (`domains/3`, `fields/17`, `subfields/1702`), bare digits for hierarchy entities
+   - Everything else: treated as a search string
+3. For search strings, call the corresponding entity's list endpoint with
+   `filter=display_name.search:{query}&sort=cited_by_count:desc&per_page=1&select=id`
+   (exception: publishers use the `search` query param to match alternate titles)
+4. Extract the entity ID from the top result; error if no results
+5. Normalize the ID to short form (strip `https://openalex.org/` prefix)
+6. Join all resolved IDs with `|`
+7. Produce the final filter condition: `{openalex_filter_key}:{joined_ids}`
+
+**Direct-value aliases (year, citations):** passed through as-is to the
+corresponding OpenAlex filter key. No API calls needed.
+
+**Overlap detection:** before combining aliases with the raw `filter` param,
+parse the raw filter's comma-separated conditions, extract each key (before `:`),
+and check for conflicts with alias filter keys. Error if any overlap.
+
+**Final combination:** all resolved alias conditions are joined with `,` (AND)
+alongside any raw filter conditions.
 
 ### lib.rs re-exports
 

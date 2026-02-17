@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "papers", about = "Query the OpenAlex academic research database")]
+#[command(name = "papers", about = "Query the OpenAlex academic research database", term_width = 100)]
 pub struct Cli {
     #[command(subcommand)]
     pub entity: EntityCommand,
@@ -106,6 +106,56 @@ pub struct ListArgs {
     pub json: bool,
 }
 
+/// Shorthand filter flags for `work list`.
+///
+/// These resolve to real OpenAlex filter expressions. ID-based filters accept
+/// either an OpenAlex entity ID or a search string (resolved to the top result
+/// by citation count).
+#[derive(Args, Clone, Default)]
+pub struct WorkFilterArgs {
+    /// Filter by author name or OpenAlex author ID (e.g. "einstein", "Albert Einstein", or "A5108093963")
+    #[arg(long)]
+    pub author: Option<String>,
+
+    /// Filter by topic name or OpenAlex topic ID (e.g. "deep learning",
+    /// "computer graphics and visualization techniques", "advanced numerical analysis techniques",
+    /// or "T10320"). Run `papers topic list -s <query>` to browse topics.
+    #[arg(long)]
+    pub topic: Option<String>,
+
+    /// Filter by domain name or ID. The 4 domains: 1 Life Sciences, 2 Social Sciences,
+    /// 3 Physical Sciences, 4 Health Sciences (e.g. "physical sciences" or "3")
+    #[arg(long)]
+    pub domain: Option<String>,
+
+    /// Filter by field name or ID (e.g. "computer science", "engineering", "mathematics", or "17").
+    /// Run `papers field list` to browse all 26 fields.
+    #[arg(long)]
+    pub field: Option<String>,
+
+    /// Filter by subfield name or ID (e.g. "artificial intelligence", "computer graphics",
+    /// "computational geometry", or "1702"). Run `papers subfield list -s <query>` or
+    /// `papers subfield autocomplete <query>` to discover subfields.
+    #[arg(long)]
+    pub subfield: Option<String>,
+
+    /// Filter by publisher name or ID. Supports pipe-separated OR (e.g. "acm", "acm|ieee", "P4310319798")
+    #[arg(long)]
+    pub publisher: Option<String>,
+
+    /// Filter by source (journal/conference) name or ID (e.g. "siggraph", "nature", or "S131921510")
+    #[arg(long)]
+    pub source: Option<String>,
+
+    /// Filter by publication year (e.g. "2024", ">2008", "2008-2024", "2020|2021")
+    #[arg(long)]
+    pub year: Option<String>,
+
+    /// Filter by citation count (e.g. ">100", "10-50")
+    #[arg(long)]
+    pub citations: Option<String>,
+}
+
 #[derive(Subcommand)]
 pub enum WorkCommand {
     /// List works with optional search/filter/sort
@@ -113,6 +163,8 @@ pub enum WorkCommand {
     List {
         #[command(flatten)]
         args: ListArgs,
+        #[command(flatten)]
+        work_filters: WorkFilterArgs,
     },
     /// Get a single work by ID (OpenAlex ID, DOI, PMID, or PMCID)
     Get {

@@ -5,9 +5,9 @@ use clap::Parser;
 use cli::{
     AuthorCommand, Cli, ConceptCommand, DomainCommand, EntityCommand, FieldCommand,
     FunderCommand, InstitutionCommand, PublisherCommand, SourceCommand, SubfieldCommand,
-    TopicCommand, WorkCommand,
+    TopicCommand, WorkCommand, WorkFilterArgs,
 };
-use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient};
+use papers::{FindWorksParams, GetParams, ListParams, OpenAlexClient, WorkFilterAliases};
 
 fn list_params_from_args(args: &cli::ListArgs) -> ListParams {
     ListParams {
@@ -21,6 +21,20 @@ fn list_params_from_args(args: &cli::ListArgs) -> ListParams {
         seed: args.seed,
         select: None,
         group_by: None,
+    }
+}
+
+fn work_filter_aliases(wf: &WorkFilterArgs) -> WorkFilterAliases {
+    WorkFilterAliases {
+        author: wf.author.clone(),
+        topic: wf.topic.clone(),
+        domain: wf.domain.clone(),
+        field: wf.field.clone(),
+        subfield: wf.subfield.clone(),
+        publisher: wf.publisher.clone(),
+        source: wf.source.clone(),
+        year: wf.year.clone(),
+        citations: wf.citations.clone(),
     }
 }
 
@@ -40,8 +54,20 @@ async fn main() {
 
     match cli.entity {
         EntityCommand::Work { cmd } => match cmd {
-            WorkCommand::List { args } => {
-                let params = list_params_from_args(&args);
+            WorkCommand::List { args, work_filters } => {
+                let aliases = work_filter_aliases(&work_filters);
+                let resolved = match papers::resolve_work_filters(
+                    &client,
+                    &aliases,
+                    args.filter.as_deref(),
+                )
+                .await
+                {
+                    Ok(f) => f,
+                    Err(e) => exit_err(&e.to_string()),
+                };
+                let mut params = list_params_from_args(&args);
+                params.filter = resolved;
                 match papers::api::work_list(&client, &params).await {
                     Ok(resp) => {
                         if args.json {

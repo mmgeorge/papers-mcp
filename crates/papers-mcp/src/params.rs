@@ -59,6 +59,111 @@ impl ListToolParams {
     }
 }
 
+/// Parameters for the `work_list` tool. Extends `ListToolParams` with shorthand
+/// filter aliases that resolve to OpenAlex filter expressions.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct WorkListToolParams {
+    /// Filter expression. Comma-separated AND conditions, pipe (`|`) for OR.
+    /// Example: `"publication_year:2024,is_oa:true"` for works.
+    pub filter: Option<String>,
+
+    /// Full-text search query. Searches title, abstract, and fulltext.
+    pub search: Option<String>,
+
+    /// Sort field with optional `:desc` suffix.
+    /// Example: `"cited_by_count:desc"`
+    pub sort: Option<String>,
+
+    /// Results per page (1-200, default 25).
+    pub per_page: Option<u32>,
+
+    /// Page number for offset pagination (max page * per_page <= 10,000).
+    pub page: Option<u32>,
+
+    /// Cursor for cursor-based pagination. Use `"*"` for the first page, then
+    /// pass `meta.next_cursor` from the previous response.
+    pub cursor: Option<String>,
+
+    /// Return a random sample of this many results.
+    pub sample: Option<u32>,
+
+    /// Seed for reproducible random sampling. Only meaningful with `sample`.
+    pub seed: Option<u32>,
+
+    /// Comma-separated list of fields to include in the response.
+    /// Example: `"id,display_name,cited_by_count"`
+    pub select: Option<String>,
+
+    /// Aggregate results by a field.
+    /// Example: `"type"` groups works by article/preprint/etc.
+    pub group_by: Option<String>,
+
+    /// Filter by author name or OpenAlex author ID (e.g. "einstein", "Albert Einstein", or "A5108093963")
+    pub author: Option<String>,
+
+    /// Filter by topic name or OpenAlex topic ID (e.g. "deep learning",
+    /// "computer graphics and visualization techniques", "advanced numerical analysis techniques",
+    /// or "T10320"). Use topic_list to browse or search available topics.
+    pub topic: Option<String>,
+
+    /// Filter by domain name or ID. The 4 domains are: 1 Life Sciences, 2 Social Sciences,
+    /// 3 Physical Sciences, 4 Health Sciences (e.g. "physical sciences" or "3")
+    pub domain: Option<String>,
+
+    /// Filter by field name or ID (second level: 26 fields, e.g. "computer science", "engineering",
+    /// "mathematics", or "17"). Use field_list to browse all 26 fields.
+    pub field: Option<String>,
+
+    /// Filter by subfield name or ID (third level: ~252 subfields, e.g. "artificial intelligence",
+    /// "computer graphics", "computational geometry", or "1702").
+    /// Use subfield_list or subfield_autocomplete to discover subfields.
+    pub subfield: Option<String>,
+
+    /// Filter by publisher name or ID. Searches alternate names. Supports pipe-separated
+    /// values for OR (e.g. "acm", "acm|ieee", or "P4310319798")
+    pub publisher: Option<String>,
+
+    /// Filter by source (journal/conference) name or ID (e.g. "siggraph", "nature", or "S131921510")
+    pub source: Option<String>,
+
+    /// Filter by publication year (e.g. "2024", ">2008", "2008-2024", "2020|2021")
+    pub year: Option<String>,
+
+    /// Filter by citation count (e.g. ">100", "10-50")
+    pub citations: Option<String>,
+}
+
+impl WorkListToolParams {
+    pub fn into_list_params(&self) -> papers::ListParams {
+        papers::ListParams {
+            filter: self.filter.clone(),
+            search: self.search.clone(),
+            sort: self.sort.clone(),
+            per_page: self.per_page,
+            page: self.page,
+            cursor: self.cursor.clone(),
+            sample: self.sample,
+            seed: self.seed,
+            select: self.select.clone(),
+            group_by: self.group_by.clone(),
+        }
+    }
+
+    pub fn into_work_filter_aliases(&self) -> papers::WorkFilterAliases {
+        papers::WorkFilterAliases {
+            author: self.author.clone(),
+            topic: self.topic.clone(),
+            domain: self.domain.clone(),
+            field: self.field.clone(),
+            subfield: self.subfield.clone(),
+            publisher: self.publisher.clone(),
+            source: self.source.clone(),
+            year: self.year.clone(),
+            citations: self.citations.clone(),
+        }
+    }
+}
+
 /// Parameters for single-entity GET endpoints.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct GetToolParams {

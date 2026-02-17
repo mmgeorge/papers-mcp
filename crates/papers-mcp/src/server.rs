@@ -5,7 +5,7 @@ use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use serde::Serialize;
 
-use crate::params::{AutocompleteToolParams, FindWorksToolParams, GetToolParams, ListToolParams};
+use crate::params::{AutocompleteToolParams, FindWorksToolParams, GetToolParams, ListToolParams, WorkListToolParams};
 
 #[derive(Clone)]
 pub struct PapersMcp {
@@ -50,10 +50,21 @@ impl PapersMcp {
     // ── List tools ───────────────────────────────────────────────────────
 
     /// Search, filter, and paginate scholarly works (articles, preprints, datasets, etc.). 240M+ records.
+    /// Accepts shorthand filter aliases (author, topic, year, etc.) that resolve to OpenAlex filter expressions.
     /// Advanced filtering: https://docs.openalex.org/api-entities/works/filter-works
     #[tool]
-    pub async fn work_list(&self, Parameters(params): Parameters<ListToolParams>) -> Result<String, String> {
-        json_result(papers::api::work_list(&self.client, &params.into_list_params()).await)
+    pub async fn work_list(&self, Parameters(params): Parameters<WorkListToolParams>) -> Result<String, String> {
+        let aliases = params.into_work_filter_aliases();
+        let mut list_params = params.into_list_params();
+        let resolved = papers::filter::resolve_work_filters(
+            &self.client,
+            &aliases,
+            list_params.filter.as_deref(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        list_params.filter = resolved;
+        json_result(papers::api::work_list(&self.client, &list_params).await)
     }
 
     /// Search, filter, and paginate author profiles. 110M+ records.
