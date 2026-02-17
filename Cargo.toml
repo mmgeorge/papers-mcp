@@ -13,6 +13,7 @@ repository = "https://github.com/mmgeorge/papers"
 
 [workspace.dependencies]
 papers-openalex = { path = "crates/papers-openalex", version = "0.1.4" }
+papers-zotero = { path = "crates/papers-zotero", version = "0.1.4" }
 papers-core = { path = "crates/papers-core", version = "0.1.4" }
 dirs = "6"
 bon = "3"

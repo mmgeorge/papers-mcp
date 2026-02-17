@@ -1,0 +1,110 @@
+{
+    "key": "LF4MJWZK",
+    "version": 4348,
+    "library": {
+        "type": "user",
+        "id": 16916553,
+        "name": "mattmg",
+        "links": {
+            "alternate": {
+                "href": "https://www.zotero.org/mattmg",
+                "type": "text/html"
+            }
+        }
+    },
+    "links": {
+        "self": {
+            "href": "https://api.zotero.org/users/16916553/items/LF4MJWZK",
+            "type": "application/json"
+        },
+        "alternate": {
+            "href": "https://www.zotero.org/mattmg/items/LF4MJWZK",
+            "type": "text/html"
+        },
+        "attachment": {
+            "href": "https://api.zotero.org/users/16916553/items/BGM2NJZH",
+            "type": "application/json",
+            "attachmentType": "application/pdf",
+            "attachmentSize": 62567637
+        }
+    },
+    "meta": {
+        "creatorSummary": "Akenine-Moller et al.",
+        "numChildren": 1
+    },
+    "data": {
+        "key": "LF4MJWZK",
+        "version": 4348,
+        "itemType": "journalArticle",
+        "title": "Real-Time Rendering 4th: Ray Tracing",
+        "creators": [
+            {
+                "creatorType": "author",
+                "firstName": "Tomas",
+                "lastName": "Akenine-Moller"
+            },
+            {
+                "creatorType": "author",
+                "firstName": "Eric",
+                "lastName": "Haines"
+            },
+            {
+                "creatorType": "author",
+                "firstName": "Naty",
+                "lastName": "Hoffman"
+            },
+            {
+                "creatorType": "author",
+                "firstName": "Angelo",
+                "lastName": "Pesce"
+            },
+            {
+                "creatorType": "author",
+                "firstName": "Michal",
+                "lastName": "Iwanicki"
+            },
+            {
+                "creatorType": "author",
+                "firstName": "Sebastien",
+                "lastName": "Hillaire"
+            }
+        ],
+        "abstractNote": "",
+        "publicationTitle": "",
+        "publisher": "",
+        "place": "",
+        "date": "",
+        "volume": "",
+        "issue": "",
+        "section": "",
+        "partNumber": "",
+        "partTitle": "",
+        "pages": "",
+        "series": "",
+        "seriesTitle": "",
+        "seriesText": "",
+        "journalAbbreviation": "",
+        "DOI": "",
+        "citationKey": "",
+        "url": "",
+        "accessDate": "",
+        "PMID": "",
+        "PMCID": "",
+        "ISSN": "",
+        "archive": "",
+        "archiveLocation": "",
+        "shortTitle": "",
+        "language": "en",
+        "libraryCatalog": "Zotero",
+        "callNumber": "",
+        "rights": "",
+        "extra": "",
+        "tags": [],
+        "collections": [
+            "BDGZ4NHT"
+        ],
+        "relations": {},
+        "dateAdded": "2026-02-16T02:13:13Z",
+        "dateModified": "2026-02-16T02:13:32Z"
+    }
+}

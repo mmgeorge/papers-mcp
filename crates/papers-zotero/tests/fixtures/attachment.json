@@ -1,0 +1,54 @@
+{
+    "key": "GABYZZR5",
+    "version": 4360,
+    "library": {
+        "type": "user",
+        "id": 16916553,
+        "name": "mattmg",
+        "links": {
+            "alternate": {
+                "href": "https://www.zotero.org/mattmg",
+                "type": "text/html"
+            }
+        }
+    },
+    "links": {
+        "self": {
+            "href": "https://api.zotero.org/users/16916553/items/GABYZZR5",
+            "type": "application/json"
+        },
+        "alternate": {
+            "href": "https://www.zotero.org/mattmg/items/GABYZZR5",
+            "type": "text/html"
+        },
+        "up": {
+            "href": "https://api.zotero.org/users/16916553/items/VTAGQSG5",
+            "type": "application/json"
+        },
+        "enclosure": {
+            "type": "text/plain",
+            "href": "https://api.zotero.org/users/16916553/items/GABYZZR5/file/view"
+        }
+    },
+    "meta": {},
+    "data": {
+        "key": "GABYZZR5",
+        "version": 4360,
+        "parentItem": "VTAGQSG5",
+        "itemType": "attachment",
+        "linkMode": "imported_file",
+        "title": "MD (mineru)",
+        "accessDate": "",
+        "url": "",
+        "note": "",
+        "contentType": "text/plain",
+        "charset": "windows-1252",
+        "filename": "Akenine-Mo - Real-Time Rendering.md",
+        "md5": "e8e43e002f812a130483249c91fa5e9a",
+        "mtime": 1771211845324,
+        "tags": [],
+        "relations": {},
+        "dateAdded": "2026-02-16T03:33:24Z",
+        "dateModified": "2026-02-16T04:36:52Z"
+    }
+}

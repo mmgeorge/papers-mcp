@@ -1,0 +1,247 @@
+# Zotero Web API v3 — Read Endpoint Specification
+#
+# Base URL: https://api.zotero.org
+# All user endpoints prefixed with: /users/<userID>
+# All group endpoints prefixed with: /groups/<groupID>
+#
+# Required headers:
+#   Zotero-API-Version: 3
+#   Zotero-API-Key: <key>
+#
+# Response format: raw JSON arrays [...] with pagination in HTTP headers
+# Headers: Total-Results, Last-Modified-Version, Link (rel=next/last)
+
+[enums]
+
+[enums.item_type]
+description = "Zotero item types"
+values = [
+    "journalArticle", "book", "bookSection", "conferencePaper", "thesis",
+    "report", "webpage", "document", "attachment", "note", "annotation",
+    "patent", "letter", "manuscript", "map", "film", "artwork",
+    "podcast", "presentation", "statute", "case", "bill", "hearing",
+    "forumPost", "blogPost", "email", "instantMessage", "interview",
+    "audioRecording", "videoRecording", "tvBroadcast", "radioBroadcast",
+    "newspaperArticle", "magazineArticle", "encyclopediaArticle",
+    "dictionaryEntry", "computerProgram", "preprint",
+]
+
+[enums.link_mode]
+description = "Attachment link modes"
+values = ["imported_file", "imported_url", "linked_file", "linked_url"]
+
+[enums.format]
+description = "Response format parameter values"
+values = ["json", "keys", "versions", "bibtex", "csljson", "ris", "tei", "coins"]
+
+[enums.sort_field]
+description = "Sort field values for item endpoints"
+values = [
+    "dateAdded", "dateModified", "title", "creator", "itemType",
+    "date", "publisher", "publicationTitle", "journalAbbreviation",
+    "language", "accessDate", "libraryCatalog", "callNumber", "rights",
+    "addedBy", "numItems",
+]
+
+[enums.tag_type]
+description = "Tag types"
+values = { "0" = "user-created", "1" = "automatic/imported" }
+
+# ── Endpoints ────────────────────────────────────────────────────────
+
+[endpoints.get_key_info]
+path = "/keys/<key>"
+method = "GET"
+returns = "JSON object with key permissions"
+
+[endpoints.list_groups]
+path = "/users/<id>/groups"
+method = "GET"
+returns = "Vec<Group>"
+
+# ── Collection endpoints ─────────────────────────────────────────────
+
+[endpoints.list_collections]
+path = "/users/<id>/collections"
+method = "GET"
+params = "CollectionListParams"
+returns = "Vec<Collection>"
+
+[endpoints.list_top_collections]
+path = "/users/<id>/collections/top"
+method = "GET"
+params = "CollectionListParams"
+returns = "Vec<Collection>"
+
+[endpoints.get_collection]
+path = "/users/<id>/collections/<key>"
+method = "GET"
+returns = "Collection"
+
+[endpoints.list_subcollections]
+path = "/users/<id>/collections/<key>/collections"
+method = "GET"
+params = "CollectionListParams"
+returns = "Vec<Collection>"
+
+# ── Item endpoints ───────────────────────────────────────────────────
+
+[endpoints.list_items]
+path = "/users/<id>/items"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+[endpoints.list_top_items]
+path = "/users/<id>/items/top"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+[endpoints.list_trash_items]
+path = "/users/<id>/items/trash"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+[endpoints.get_item]
+path = "/users/<id>/items/<key>"
+method = "GET"
+returns = "Item"
+
+[endpoints.list_item_children]
+path = "/users/<id>/items/<key>/children"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+[endpoints.list_publication_items]
+path = "/users/<id>/publications/items"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+[endpoints.list_collection_items]
+path = "/users/<id>/collections/<key>/items"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+[endpoints.list_collection_top_items]
+path = "/users/<id>/collections/<key>/items/top"
+method = "GET"
+params = "ItemListParams"
+returns = "Vec<Item>"
+
+# ── Search endpoints ─────────────────────────────────────────────────
+
+[endpoints.list_searches]
+path = "/users/<id>/searches"
+method = "GET"
+returns = "Vec<SavedSearch>"
+
+[endpoints.get_search]
+path = "/users/<id>/searches/<key>"
+method = "GET"
+returns = "SavedSearch"
+
+# ── Tag endpoints ────────────────────────────────────────────────────
+
+[endpoints.list_tags]
+path = "/users/<id>/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.get_tag]
+path = "/users/<id>/tags/<urlencoded-name>"
+method = "GET"
+returns = "Vec<Tag>"
+note = "Returns array (usually 1 element), not single object"
+
+[endpoints.list_item_tags]
+path = "/users/<id>/items/<key>/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_items_tags]
+path = "/users/<id>/items/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_top_items_tags]
+path = "/users/<id>/items/top/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_trash_tags]
+path = "/users/<id>/items/trash/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_collection_tags]
+path = "/users/<id>/collections/<key>/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_collection_items_tags]
+path = "/users/<id>/collections/<key>/items/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_collection_top_items_tags]
+path = "/users/<id>/collections/<key>/items/top/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+
+[endpoints.list_publication_tags]
+path = "/users/<id>/publications/items/tags"
+method = "GET"
+params = "TagListParams"
+returns = "Vec<Tag>"
+note = "Quirk: returns ALL library tags, not just publication tags"
+
+# ── Parameters ───────────────────────────────────────────────────────
+
+[params.ItemListParams]
+fields = [
+    { name = "q", type = "String", query_key = "q", description = "Quick search" },
+    { name = "qmode", type = "String", query_key = "qmode", description = "Search mode: titleCreatorYear | everything" },
+    { name = "tag", type = "String", query_key = "tag", description = "Filter by tag" },
+    { name = "item_type", type = "String", query_key = "itemType", description = "Filter by item type" },
+    { name = "item_key", type = "String", query_key = "itemKey", description = "Filter to specific keys" },
+    { name = "since", type = "u64", query_key = "since", description = "Modified since version" },
+    { name = "sort", type = "String", query_key = "sort", description = "Sort field" },
+    { name = "direction", type = "String", query_key = "direction", description = "asc | desc" },
+    { name = "limit", type = "u32", query_key = "limit", description = "Max results (1-100)" },
+    { name = "start", type = "u32", query_key = "start", description = "Offset" },
+    { name = "format", type = "String", query_key = "format", description = "Response format" },
+    { name = "include", type = "String", query_key = "include", description = "Extra data to include" },
+    { name = "style", type = "String", query_key = "style", description = "Citation style" },
+    { name = "include_trashed", type = "bool", query_key = "includeTrashed", description = "Include trash" },
+]
+
+[params.CollectionListParams]
+fields = [
+    { name = "sort", type = "String", query_key = "sort" },
+    { name = "direction", type = "String", query_key = "direction" },
+    { name = "limit", type = "u32", query_key = "limit" },
+    { name = "start", type = "u32", query_key = "start" },
+]
+
+[params.TagListParams]
+fields = [
+    { name = "q", type = "String", query_key = "q" },
+    { name = "qmode", type = "String", query_key = "qmode" },
+    { name = "limit", type = "u32", query_key = "limit" },
+    { name = "start", type = "u32", query_key = "start" },
+    { name = "sort", type = "String", query_key = "sort" },
+    { name = "direction", type = "String", query_key = "direction" },
+]

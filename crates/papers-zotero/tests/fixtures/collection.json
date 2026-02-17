@@ -1,0 +1,40 @@
+{
+    "key": "QVK3WHF2",
+    "version": 3679,
+    "library": {
+        "type": "user",
+        "id": 16916553,
+        "name": "mattmg",
+        "links": {
+            "alternate": {
+                "href": "https://www.zotero.org/mattmg",
+                "type": "text/html"
+            }
+        }
+    },
+    "links": {
+        "self": {
+            "href": "https://api.zotero.org/users/16916553/collections/QVK3WHF2",
+            "type": "application/json"
+        },
+        "alternate": {
+            "href": "https://www.zotero.org/mattmg/collections/QVK3WHF2",
+            "type": "text/html"
+        },
+        "up": {
+            "href": "https://api.zotero.org/users/16916553/collections/BXHE5XUF",
+            "type": "application/json"
+        }
+    },
+    "meta": {
+        "numCollections": 0,
+        "numItems": 1
+    },
+    "data": {
+        "key": "QVK3WHF2",
+        "version": 3679,
+        "name": "Variational Calculus",
+        "parentCollection": "BXHE5XUF",
+        "relations": {}
+    }
+}

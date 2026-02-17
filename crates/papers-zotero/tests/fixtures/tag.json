@@ -1,0 +1,17 @@
+{
+    "tag": "Open",
+    "links": {
+        "self": {
+            "href": "https://api.zotero.org/users/16916553/tags/Open",
+            "type": "application/json"
+        },
+        "alternate": {
+            "href": "http://zotero.org/users/16916553/tags/Open",
+            "type": "text/html"
+        }
+    },
+    "meta": {
+        "type": 0,
+        "numItems": 2
+    }
+}

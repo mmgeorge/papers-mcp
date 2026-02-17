@@ -1095,6 +1095,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "papers-zotero"
+version = "0.1.4"
+dependencies = [
+ "bon",
+ "dirs",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "pastey"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
