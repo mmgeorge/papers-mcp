@@ -1,0 +1,13 @@
+pre-release-hook = ["nu", "-c", """
+  let changelog = ($env.WORKSPACE_ROOT | path join CHANGELOG.md)
+  let has_version = if ($changelog | path exists) {
+    (open $changelog | str contains $"## [($env.NEW_VERSION)]")
+  } else {
+    false
+  }
+  if not $has_version {
+    cd $env.WORKSPACE_ROOT
+    git-cliff -o CHANGELOG.md --tag $"v($env.NEW_VERSION)"
+    git add CHANGELOG.md
+  }
+"""]
