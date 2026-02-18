@@ -10,7 +10,7 @@ repository.workspace = true
 [dependencies]
 papers-core.workspace = true
 papers-zotero.workspace = true
-pdf-extract.workspace = true
+papers-datalab.workspace = true
 reqwest.workspace = true
 rmcp.workspace = true
 schemars.workspace = true

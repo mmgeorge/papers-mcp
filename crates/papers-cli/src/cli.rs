@@ -1,4 +1,17 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+
+/// Quality level for DataLab Marker API extraction.
+///
+/// Maps directly to DataLab's processing modes:
+/// - `fast`     — quickest turnaround, lower layout accuracy
+/// - `balanced` — default DataLab mode, good quality/speed trade-off
+/// - `accurate` — highest quality markdown with full layout reconstruction (slowest)
+#[derive(ValueEnum, Clone, Debug)]
+pub enum AdvancedMode {
+    Fast,
+    Balanced,
+    Accurate,
+}
 
 #[derive(Parser)]
 #[command(name = "papers", about = "Query the OpenAlex academic research database", term_width = 100)]
@@ -407,6 +420,10 @@ pub enum WorkCommand {
         /// Skip interactive prompt when no PDF is found
         #[arg(long)]
         no_prompt: bool,
+        /// Use DataLab Marker API for markdown extraction instead of local pdfium.
+        /// Requires DATALAB_API_KEY. Quality: fast | balanced | accurate (default: balanced).
+        #[arg(long, value_name = "QUALITY")]
+        advanced: Option<AdvancedMode>,
     },
 }
 

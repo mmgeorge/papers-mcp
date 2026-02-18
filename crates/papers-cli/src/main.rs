@@ -3,7 +3,7 @@ mod format;
 
 use clap::Parser;
 use cli::{
-    AuthorCommand, AuthorFilterArgs, Cli, DomainCommand, DomainFilterArgs,
+    AdvancedMode, AuthorCommand, AuthorFilterArgs, Cli, DomainCommand, DomainFilterArgs,
     EntityCommand, FieldCommand, FieldFilterArgs, FunderCommand, FunderFilterArgs,
     InstitutionCommand, InstitutionFilterArgs, PublisherCommand, PublisherFilterArgs,
     SourceCommand, SourceFilterArgs, SubfieldCommand, SubfieldFilterArgs, TopicCommand,
@@ -299,9 +299,22 @@ async fn main() {
                     Err(e) => exit_err(&e.to_string()),
                 }
             }
-            WorkCommand::Text { id, json, no_prompt } => {
+            WorkCommand::Text { id, json, no_prompt, advanced } => {
                 let zotero = ZoteroClient::from_env().ok();
-                match papers_core::text::work_text(&client, zotero.as_ref(), &id).await {
+                let dl_client = if advanced.is_some() {
+                    papers_datalab::DatalabClient::from_env().ok()
+                } else {
+                    None
+                };
+                let datalab = dl_client.as_ref().map(|dl| {
+                    let mode = match advanced.as_ref().unwrap() {
+                        AdvancedMode::Fast     => papers_core::text::ProcessingMode::Fast,
+                        AdvancedMode::Balanced => papers_core::text::ProcessingMode::Balanced,
+                        AdvancedMode::Accurate => papers_core::text::ProcessingMode::Accurate,
+                    };
+                    (dl, mode)
+                });
+                match papers_core::text::work_text(&client, zotero.as_ref(), datalab, &id).await {
                     Ok(result) => {
                         if json {
                             print_json(&result);

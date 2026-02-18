@@ -1,3 +1,5 @@
+pub use papers_datalab::ProcessingMode;
+use papers_datalab::{DatalabClient, MarkerRequest, OutputFormat};
 use papers_openalex::{GetParams, OpenAlexClient, Work};
 use papers_zotero::{ItemListParams, ZoteroClient};
 use serde::Serialize;
@@ -11,6 +13,7 @@ pub enum PdfSource {
     ZoteroRemote { item_key: String },
     DirectUrl { url: String },
     OpenAlexContent,
+    DataLab,
 }
 
 /// Result of extracting text from a work's PDF.
@@ -41,6 +44,9 @@ pub enum WorkTextError {
     #[error("PDF extraction error: {0}")]
     PdfExtract(String),
 
+    #[error(transparent)]
+    DataLab(#[from] papers_datalab::DatalabError),
+
     #[error("No PDF found for work {work_id}{}", title.as_ref().map(|t| format!(" ({})", t)).unwrap_or_default())]
     NoPdfFound {
         work_id: String,
@@ -62,18 +68,27 @@ const DIRECT_PDF_DOMAINS: &[&str] = &[
     "plos.org",
 ];
 
-/// Extract text from PDF bytes.
-///
-/// Wraps the call in `catch_unwind` because `pdf-extract` can panic on
-/// certain malformed or unsupported PDFs (e.g. unwrap on None internals).
+/// Extract text from PDF bytes using pdfium-render.
+pub fn extract_text_bytes(pdf_bytes: &[u8]) -> Result<String, WorkTextError> {
+    extract_text(pdf_bytes)
+}
+
 fn extract_text(pdf_bytes: &[u8]) -> Result<String, WorkTextError> {
-    match std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(pdf_bytes)) {
-        Ok(Ok(text)) => Ok(text),
-        Ok(Err(e)) => Err(WorkTextError::PdfExtract(e.to_string())),
-        Err(_) => Err(WorkTextError::PdfExtract(
-            "pdf-extract panicked while processing this PDF".to_string(),
-        )),
+    let pdfium = pdfium_render::prelude::Pdfium::default();
+    let document = pdfium
+        .load_pdf_from_byte_slice(pdf_bytes, None)
+        .map_err(|e| WorkTextError::PdfExtract(e.to_string()))?;
+    let mut text = String::new();
+    for page in document.pages().iter() {
+        text.push_str(
+            &page
+                .text()
+                .map_err(|e| WorkTextError::PdfExtract(e.to_string()))?
+                .all(),
+        );
+        text.push('\n');
     }
+    Ok(text)
 }
 
 /// Strip the `https://doi.org/` prefix from a DOI URL, returning the bare DOI.
@@ -317,6 +332,30 @@ async fn try_openalex_content(
     Ok(None)
 }
 
+/// Extract text from PDF bytes, routing through DataLab if `datalab` is `Some`.
+async fn do_extract(
+    pdf_bytes: Vec<u8>,
+    short_id: &str,
+    datalab: Option<(&DatalabClient, ProcessingMode)>,
+    source: &mut PdfSource,
+) -> Result<String, WorkTextError> {
+    if let Some((dl, mode)) = datalab {
+        let dl_result = dl
+            .convert_document(MarkerRequest {
+                file: Some(pdf_bytes),
+                filename: Some(format!("{}.pdf", short_id)),
+                output_format: OutputFormat::Markdown,
+                mode,
+                ..Default::default()
+            })
+            .await?;
+        *source = PdfSource::DataLab;
+        Ok(dl_result.markdown.unwrap_or_default())
+    } else {
+        extract_text(&pdf_bytes)
+    }
+}
+
 /// Download and extract the full text of a scholarly work.
 ///
 /// Tries multiple sources in priority order:
@@ -324,9 +363,14 @@ async fn try_openalex_content(
 /// 2. Remote Zotero API (if credentials available)
 /// 3. Direct PDF URLs from OpenAlex locations (whitelisted domains)
 /// 4. OpenAlex Content API (requires `OPENALEX_API_KEY`)
+///
+/// When `datalab` is `Some`, the final extraction step uses the DataLab Marker
+/// API instead of local pdfium extraction, producing higher-quality markdown.
+/// The `ProcessingMode` controls quality vs. speed: `Fast` < `Balanced` < `Accurate`.
 pub async fn work_text(
     openalex: &OpenAlexClient,
     zotero: Option<&ZoteroClient>,
+    datalab: Option<(&DatalabClient, ProcessingMode)>,
     work_id: &str,
 ) -> Result<WorkTextResult, WorkTextError> {
     // 1. Fetch work metadata from OpenAlex
@@ -335,13 +379,14 @@ pub async fn work_text(
     let title = work.title.clone().or_else(|| work.display_name.clone());
     let doi_raw = work.doi.as_deref();
     let doi = doi_raw.map(bare_doi);
+    let short_id = short_openalex_id(&work.id);
 
     let http = reqwest::Client::new();
 
     // 2. Try Zotero (local then remote)
     if let (Some(zotero), Some(doi)) = (zotero, doi) {
-        if let Some((bytes, source)) = try_zotero(zotero, doi, title.as_deref()).await? {
-            let text = extract_text(&bytes)?;
+        if let Some((bytes, mut source)) = try_zotero(zotero, doi, title.as_deref()).await? {
+            let text = do_extract(bytes, short_id, datalab, &mut source).await?;
             return Ok(WorkTextResult {
                 text,
                 source,
@@ -354,8 +399,8 @@ pub async fn work_text(
 
     // 3. Try direct PDF URLs from OpenAlex locations
     let pdf_urls = collect_pdf_urls(&work);
-    if let Some((bytes, source)) = try_direct_urls(&http, &pdf_urls).await? {
-        let text = extract_text(&bytes)?;
+    if let Some((bytes, mut source)) = try_direct_urls(&http, &pdf_urls).await? {
+        let text = do_extract(bytes, short_id, datalab, &mut source).await?;
         return Ok(WorkTextResult {
             text,
             source,
@@ -366,8 +411,8 @@ pub async fn work_text(
     }
 
     // 4. Try OpenAlex Content API
-    if let Some((bytes, source)) = try_openalex_content(&http, &work).await? {
-        let text = extract_text(&bytes)?;
+    if let Some((bytes, mut source)) = try_openalex_content(&http, &work).await? {
+        let text = do_extract(bytes, short_id, datalab, &mut source).await?;
         return Ok(WorkTextResult {
             text,
             source,

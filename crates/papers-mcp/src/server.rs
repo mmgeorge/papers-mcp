@@ -1,4 +1,5 @@
 use papers_core::{DiskCache, OpenAlexClient};
+use papers_datalab::DatalabClient;
 use papers_zotero::ZoteroClient;
 use std::time::Duration;
 use rmcp::handler::server::tool::ToolRouter;
@@ -19,6 +20,7 @@ use crate::params::{
 pub struct PapersMcp {
     client: OpenAlexClient,
     zotero: Option<ZoteroClient>,
+    datalab: Option<DatalabClient>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -35,9 +37,11 @@ impl PapersMcp {
             client = client.with_cache(cache);
         }
         let zotero = ZoteroClient::from_env().ok();
+        let datalab = DatalabClient::from_env().ok();
         Self {
             client,
             zotero,
+            datalab,
             tool_router: Self::tool_router(),
         }
     }
@@ -46,6 +50,7 @@ impl PapersMcp {
         Self {
             client,
             zotero: ZoteroClient::from_env().ok(),
+            datalab: DatalabClient::from_env().ok(),
             tool_router: Self::tool_router(),
         }
     }
@@ -270,7 +275,16 @@ impl PapersMcp {
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<WorkTextToolParams>,
     ) -> Result<String, String> {
-        match papers_core::text::work_text(&self.client, self.zotero.as_ref(), &params.id).await {
+        let datalab = self.datalab.as_ref().and_then(|dl| {
+            let mode = match params.advanced.as_deref() {
+                Some("fast")     => papers_core::text::ProcessingMode::Fast,
+                Some("accurate") => papers_core::text::ProcessingMode::Accurate,
+                Some(_)          => papers_core::text::ProcessingMode::Balanced,
+                None             => return None,
+            };
+            Some((dl, mode))
+        });
+        match papers_core::text::work_text(&self.client, self.zotero.as_ref(), datalab, &params.id).await {
             Ok(result) => json_result::<_, String>(Ok(result)),
             Err(papers_core::text::WorkTextError::NoPdfFound { work_id, title, doi }) => {
                 // Try the fallback chain: sampling → elicitation → error
@@ -420,9 +434,9 @@ impl PapersMcp {
             _ => return None,
         };
 
-        let extracted = match std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(&bytes)) {
-            Ok(Ok(t)) => t,
-            Ok(Err(_)) | Err(_) => return None,
+        let extracted = match papers_core::text::extract_text_bytes(&bytes) {
+            Ok(t) => t,
+            Err(_) => return None,
         };
 
         Some(json_result::<_, String>(Ok(papers_core::text::WorkTextResult {
@@ -475,10 +489,9 @@ impl PapersMcp {
                         message: Some("PDF found!".into()),
                     }).await;
 
-                    let text = match std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(&bytes)) {
-                        Ok(Ok(t)) => t,
-                        Ok(Err(e)) => return Err(format!("PDF extraction error: {e}")),
-                        Err(_) => return Err("PDF extraction error: pdf-extract panicked while processing this PDF".to_string()),
+                    let text = match papers_core::text::extract_text_bytes(&bytes) {
+                        Ok(t) => t,
+                        Err(e) => return Err(format!("PDF extraction error: {e}")),
                     };
 
                     return json_result::<_, String>(Ok(papers_core::text::WorkTextResult {

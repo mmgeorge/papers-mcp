@@ -627,6 +627,13 @@ impl SubfieldListToolParams {
 pub struct WorkTextToolParams {
     /// Work identifier: OpenAlex ID (W...), DOI, PMID, or PMCID.
     pub id: String,
+    /// Use DataLab Marker API for extraction instead of local pdfium.
+    /// Requires `DATALAB_API_KEY` env var. Quality levels:
+    /// - `"fast"`     — quickest, lower layout accuracy
+    /// - `"balanced"` — good quality/speed trade-off (DataLab default)
+    /// - `"accurate"` — highest quality markdown with full layout reconstruction
+    /// Omit to use local pdfium extraction.
+    pub advanced: Option<String>,
 }
 
 /// Parameters for single-entity GET endpoints.

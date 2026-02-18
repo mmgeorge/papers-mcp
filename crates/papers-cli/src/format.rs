@@ -741,6 +741,7 @@ pub fn format_work_text(result: &WorkTextResult) -> String {
         }
         papers_core::text::PdfSource::DirectUrl { url } => format!("Direct URL: {url}"),
         papers_core::text::PdfSource::OpenAlexContent => "OpenAlex Content API".to_string(),
+        papers_core::text::PdfSource::DataLab => "DataLab Marker API".to_string(),
     };
     out.push_str(&format!("Source: {source_desc}\n"));
     out.push_str(&format!(

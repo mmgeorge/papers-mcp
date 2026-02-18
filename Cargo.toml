@@ -19,14 +19,15 @@ dirs = "6"
 bon = "3"
 clap = { version = "4", features = ["derive", "wrap_help"] }
 futures = "0.3"
-reqwest = { version = "0.13", features = ["json", "query", "stream"] }
+reqwest = { version = "0.13", features = ["json", "query", "stream", "multipart"] }
 rmcp = { version = "0.15", features = ["server", "transport-io", "macros", "elicitation"] }
 schemars = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-pdf-extract = "0.10"
+pdfium-render = "0.8"
+papers-datalab = { path = "crates/papers-datalab", version = "0.1.4" }
 wiremock = "0.6"
 
 # The profile that 'dist' will build with

@@ -1,0 +1,168 @@
+# DataLab REST API
+# Base URL: https://www.datalab.to
+# Authentication: X-API-Key header required on all requests
+# Async pattern: POST to submit → GET to poll until status == "complete"
+# Results expire 1 hour after completion
+
+[enums]
+
+[enums.output_format]
+values = ["markdown", "html", "json", "chunks"]
+default = "markdown"
+
+[enums.processing_mode]
+values = ["fast", "balanced", "accurate"]
+default = "balanced"
+
+[enums.marker_status]
+values = ["processing", "complete", "failed"]
+
+[enums.error_in]
+values = ["VALIDATION", "INFERENCE", "OTHER"]
+
+[enums.extras_flag]
+values = ["track_changes", "chart_understanding", "table_row_bboxes",
+          "extract_links", "infographic", "new_block_types"]
+
+[[endpoints]]
+name = "submit_marker"
+path = "/api/v1/marker"
+method = "POST"
+content_type = "multipart/form-data"
+params = "MarkerRequest"
+returns = "MarkerSubmitResponse"
+note = "Submit a document for conversion. Returns request_id immediately; poll get_marker_result for output."
+
+[[endpoints]]
+name = "get_marker_result"
+path = "/api/v1/marker/{request_id}"
+method = "GET"
+returns = "MarkerPollResponse"
+note = "Poll every 2s until status == complete or failed. Results deleted 1 hour after completion."
+
+[[endpoints]]
+name = "list_step_types"
+path = "/api/v1/workflows/step-types"
+method = "GET"
+returns = "StepTypesResponse"
+note = "Returns all available workflow step types with their JSON Schema settings definitions."
+
+[[params.MarkerRequest]]
+name = "file"
+type = "bytes"
+required = false
+note = "Raw file bytes. Exactly one of file or file_url required."
+
+[[params.MarkerRequest]]
+name = "file_url"
+type = "string"
+required = false
+note = "Public URL to file. Exactly one of file or file_url required."
+
+[[params.MarkerRequest]]
+name = "output_format"
+type = "OutputFormat"
+required = false
+default = "markdown"
+
+[[params.MarkerRequest]]
+name = "mode"
+type = "ProcessingMode"
+required = false
+default = "balanced"
+
+[[params.MarkerRequest]]
+name = "max_pages"
+type = "integer"
+required = false
+
+[[params.MarkerRequest]]
+name = "page_range"
+type = "string"
+required = false
+note = "0-indexed. E.g. '0-5' or '1,3,5'."
+
+[[params.MarkerRequest]]
+name = "paginate"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "skip_cache"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "disable_image_extraction"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "disable_image_captions"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "save_checkpoint"
+type = "boolean"
+required = false
+default = "false"
+note = "Save intermediate checkpoint for downstream extraction steps."
+
+[[params.MarkerRequest]]
+name = "add_block_ids"
+type = "boolean"
+required = false
+default = "false"
+note = "HTML mode only: adds data-block-id attributes."
+
+[[params.MarkerRequest]]
+name = "include_markdown_in_chunks"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "keep_spreadsheet_formatting"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "page_schema"
+type = "json_object"
+required = false
+note = "JSON schema for structured data extraction."
+
+[[params.MarkerRequest]]
+name = "segmentation_schema"
+type = "json_string"
+required = false
+
+[[params.MarkerRequest]]
+name = "additional_config"
+type = "json_object"
+required = false
+note = "Extra Marker config: force_ocr, languages, etc."
+
+[[params.MarkerRequest]]
+name = "extras"
+type = "string"
+required = false
+note = "Comma-separated extras: track_changes, chart_understanding, table_row_bboxes, extract_links, infographic, new_block_types."
+
+[[params.MarkerRequest]]
+name = "fence_synthetic_captions"
+type = "boolean"
+required = false
+default = "false"
+
+[[params.MarkerRequest]]
+name = "webhook_url"
+type = "string"
+required = false
+note = "URL to POST results to when processing completes."
