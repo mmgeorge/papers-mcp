@@ -72,6 +72,11 @@ pub enum EntityCommand {
         #[command(subcommand)]
         cmd: SubfieldCommand,
     },
+    /// Your personal Zotero reference library
+    Zotero {
+        #[command(subcommand)]
+        cmd: ZoteroCommand,
+    },
 }
 
 /// Shared args for all list commands
@@ -625,3 +630,478 @@ pub enum SubfieldCommand {
     },
 }
 
+// ── Zotero commands ────────────────────────────────────────────────────────
+
+#[derive(Subcommand)]
+pub enum ZoteroCommand {
+    /// Bibliographic items (journalArticle, book, conferencePaper, etc.)
+    Work {
+        #[command(subcommand)]
+        cmd: ZoteroWorkCommand,
+    },
+    /// File attachments (PDFs, snapshots, links)
+    Attachment {
+        #[command(subcommand)]
+        cmd: ZoteroAttachmentCommand,
+    },
+    /// PDF reader highlights, comments, and marks
+    Annotation {
+        #[command(subcommand)]
+        cmd: ZoteroAnnotationCommand,
+    },
+    /// User-written text notes
+    Note {
+        #[command(subcommand)]
+        cmd: ZoteroNoteCommand,
+    },
+    /// Collections (folders for organizing items)
+    Collection {
+        #[command(subcommand)]
+        cmd: ZoteroCollectionCommand,
+    },
+    /// Tags (labels applied to items)
+    Tag {
+        #[command(subcommand)]
+        cmd: ZoteroTagCommand,
+    },
+    /// Saved searches
+    Search {
+        #[command(subcommand)]
+        cmd: ZoteroSearchCommand,
+    },
+    /// Zotero groups (shared libraries)
+    Group {
+        #[command(subcommand)]
+        cmd: ZoteroGroupCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroWorkCommand {
+    /// List bibliographic items (excludes notes, attachments, annotations)
+    List {
+        /// Quick text search (title, creator, year)
+        #[arg(long, short = 's')]
+        search: Option<String>,
+        /// Search scope: titleCreatorYear (default) or everything
+        #[arg(long)]
+        qmode: Option<String>,
+        /// Filter by tag; use || for OR, - prefix for NOT
+        #[arg(long, short = 't')]
+        tag: Option<String>,
+        /// Filter by bibliographic type (e.g. journalArticle, book, conferencePaper)
+        #[arg(long = "type")]
+        type_: Option<String>,
+        /// Sort field (dateAdded, dateModified, title, creator, date, publisher, publicationTitle)
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Only items modified after this library version
+        #[arg(long)]
+        since: Option<u64>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single bibliographic item by Zotero key
+    Get {
+        /// Zotero item key (e.g. LF4MJWZK)
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List collections the work belongs to
+    Collections {
+        /// Zotero item key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List notes attached to a work
+    Notes {
+        /// Zotero item key
+        key: String,
+        /// Results per page
+        #[arg(long, short = 'n')]
+        limit: Option<u32>,
+        /// Pagination offset
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List attachments of a work
+    Attachments {
+        /// Zotero item key
+        key: String,
+        /// Results per page
+        #[arg(long, short = 'n')]
+        limit: Option<u32>,
+        /// Pagination offset
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List all annotations across all PDFs of a work
+    Annotations {
+        /// Zotero item key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List tags attached to a work
+    Tags {
+        /// Zotero item key
+        key: String,
+        /// Filter tags by name
+        #[arg(long, short = 'q')]
+        search: Option<String>,
+        /// Search mode: startsWith (default) or contains
+        #[arg(long)]
+        qmode: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n')]
+        limit: Option<u32>,
+        /// Pagination offset
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroAttachmentCommand {
+    /// List all attachment items in the library
+    List {
+        /// Search by filename or title
+        #[arg(long, short = 's')]
+        search: Option<String>,
+        /// Sort field (dateAdded, dateModified, title, accessDate)
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single attachment item by key
+    Get {
+        /// Zotero attachment key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download the file for an attachment (only works for imported_file/imported_url)
+    File {
+        /// Zotero attachment key
+        key: String,
+        /// Output path (use - for stdout)
+        #[arg(long, short = 'o', required = true)]
+        output: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroAnnotationCommand {
+    /// List all annotation items in the library
+    List {
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single annotation by key
+    Get {
+        /// Zotero annotation key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroNoteCommand {
+    /// List all note items in the library
+    List {
+        /// Search note content
+        #[arg(long, short = 's')]
+        search: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single note by key (full HTML content in data.note)
+    Get {
+        /// Zotero note key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroCollectionCommand {
+    /// List collections in the library
+    List {
+        /// Sort field (title, dateAdded, dateModified)
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Only root-level collections
+        #[arg(long)]
+        top: bool,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single collection by key
+    Get {
+        /// Zotero collection key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List bibliographic works in a collection
+    Works {
+        /// Zotero collection key
+        key: String,
+        /// Quick text search
+        #[arg(long, short = 's')]
+        search: Option<String>,
+        /// Search scope: titleCreatorYear or everything
+        #[arg(long)]
+        qmode: Option<String>,
+        /// Filter by tag
+        #[arg(long, short = 't')]
+        tag: Option<String>,
+        /// Filter by bibliographic type
+        #[arg(long = "type")]
+        type_: Option<String>,
+        /// Sort field
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List attachments in a collection
+    Attachments {
+        /// Zotero collection key
+        key: String,
+        /// Sort field
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List notes in a collection
+    Notes {
+        /// Zotero collection key
+        key: String,
+        /// Search note content
+        #[arg(long, short = 's')]
+        search: Option<String>,
+        /// Sort field
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List annotations on PDFs in a collection
+    Annotations {
+        /// Zotero collection key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List sub-collections of a collection
+    Subcollections {
+        /// Zotero collection key
+        key: String,
+        /// Sort field (title, dateAdded, dateModified)
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List tags on items within a collection
+    Tags {
+        /// Zotero collection key
+        key: String,
+        /// Filter tags by name
+        #[arg(long, short = 'q')]
+        search: Option<String>,
+        /// Search mode: startsWith or contains
+        #[arg(long)]
+        qmode: Option<String>,
+        /// Results per page
+        #[arg(long, short = 'n')]
+        limit: Option<u32>,
+        /// Pagination offset
+        #[arg(long)]
+        start: Option<u32>,
+        /// Only tags on top-level items in the collection
+        #[arg(long)]
+        top: bool,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroTagCommand {
+    /// List tags from the global library tag index (with per-tag item counts)
+    List {
+        /// Search tag names
+        #[arg(long, short = 'q')]
+        search: Option<String>,
+        /// Search mode: startsWith (default) or contains
+        #[arg(long)]
+        qmode: Option<String>,
+        /// Sort field
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction: asc or desc
+        #[arg(long)]
+        direction: Option<String>,
+        /// Results per page (1-100, default 25)
+        #[arg(long, short = 'n', default_value = "25")]
+        limit: u32,
+        /// Pagination offset (0-based)
+        #[arg(long)]
+        start: Option<u32>,
+        /// Only tags appearing on top-level items
+        #[arg(long)]
+        top: bool,
+        /// Only tags appearing on trashed items
+        #[arg(long)]
+        trash: bool,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a specific tag by name
+    Get {
+        /// Tag name
+        name: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroSearchCommand {
+    /// List all saved searches in the library
+    List {
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single saved search by key
+    Get {
+        /// Zotero saved search key
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroGroupCommand {
+    /// List all Zotero groups accessible to the current user
+    List {
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}

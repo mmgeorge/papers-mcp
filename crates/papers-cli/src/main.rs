@@ -7,14 +7,16 @@ use cli::{
     EntityCommand, FieldCommand, FieldFilterArgs, FunderCommand, FunderFilterArgs,
     InstitutionCommand, InstitutionFilterArgs, PublisherCommand, PublisherFilterArgs,
     SourceCommand, SourceFilterArgs, SubfieldCommand, SubfieldFilterArgs, TopicCommand,
-    TopicFilterArgs, WorkCommand, WorkFilterArgs,
+    TopicFilterArgs, WorkCommand, WorkFilterArgs, ZoteroAnnotationCommand, ZoteroAttachmentCommand,
+    ZoteroCollectionCommand, ZoteroCommand, ZoteroGroupCommand, ZoteroNoteCommand,
+    ZoteroSearchCommand, ZoteroTagCommand, ZoteroWorkCommand,
 };
 use papers_core::{
     AuthorListParams, DiskCache, DomainListParams, FieldListParams, FindWorksParams,
     FunderListParams, GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams,
     SourceListParams, SubfieldListParams, TopicListParams, WorkListParams,
 };
-use papers_zotero::ZoteroClient;
+use papers_zotero::{CollectionListParams, Item, ItemListParams, TagListParams, ZoteroClient};
 use std::time::Duration;
 
 fn work_list_params(args: &cli::ListArgs, wf: &WorkFilterArgs) -> WorkListParams {
@@ -220,6 +222,14 @@ fn subfield_list_params(args: &cli::ListArgs, sf: &SubfieldFilterArgs) -> Subfie
 
 fn print_json<T: serde::Serialize>(val: &T) {
     println!("{}", serde_json::to_string_pretty(val).expect("JSON serialization failed"));
+}
+
+/// Returns true if this attachment can have annotation children (PDF, EPUB, or HTML snapshot).
+fn is_annotatable_attachment(att: &Item) -> bool {
+    matches!(
+        att.data.content_type.as_deref(),
+        Some("application/pdf") | Some("application/epub+zip") | Some("text/html")
+    )
 }
 
 fn exit_err(msg: &str) -> ! {
@@ -694,6 +704,333 @@ async fn main() {
                     }
                     Err(e) => exit_err(&e.to_string()),
                 }
+            }
+        },
+
+        EntityCommand::Zotero { cmd } => {
+            let zotero = ZoteroClient::from_env().unwrap_or_else(|_| {
+                exit_err("Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.")
+            });
+            match cmd {
+                ZoteroCommand::Work { cmd } => match cmd {
+                    ZoteroWorkCommand::List {
+                        search, qmode, tag, type_, sort, direction, limit, start, since, json,
+                    } => {
+                        let params = ItemListParams {
+                            item_type: type_,
+                            q: search,
+                            qmode,
+                            tag,
+                            sort,
+                            direction,
+                            limit: Some(limit),
+                            start,
+                            since,
+                            ..Default::default()
+                        };
+                        match zotero.list_top_items(&params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_work_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::Get { key, json } => {
+                        match zotero.get_item(&key).await {
+                            Ok(item) => {
+                                if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::Collections { key, json } => {
+                        let item = zotero.get_item(&key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
+                        let col_keys = item.data.collections.clone();
+                        let mut collections = Vec::new();
+                        for ck in &col_keys {
+                            match zotero.get_collection(ck).await {
+                                Ok(c) => collections.push(c),
+                                Err(e) => exit_err(&e.to_string()),
+                            }
+                        }
+                        if json { print_json(&collections); } else { print!("{}", format::format_zotero_collection_list_vec(&collections)); }
+                    }
+                    ZoteroWorkCommand::Notes { key, limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("note".into()), limit, start, ..Default::default() };
+                        match zotero.list_item_children(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_note_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::Attachments { key, limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("attachment".into()), limit, start, ..Default::default() };
+                        match zotero.list_item_children(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_attachment_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::Annotations { key, json } => {
+                        let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+                        let attachments = zotero.list_item_children(&key, &att_params).await
+                            .unwrap_or_else(|e| exit_err(&e.to_string()));
+                        let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+                        let mut all_annotations = Vec::new();
+                        for att in &attachments.items {
+                            if !is_annotatable_attachment(att) { continue; }
+                            match zotero.list_item_children(&att.key, &ann_params).await {
+                                Ok(r) => all_annotations.extend(r.items),
+                                Err(_) => {},
+                            }
+                        }
+                        if json { print_json(&all_annotations); } else { print!("{}", format::format_zotero_annotation_list_vec(&all_annotations)); }
+                    }
+                    ZoteroWorkCommand::Tags { key, search, qmode, limit, start, json } => {
+                        let params = TagListParams { q: search, qmode, limit, start, ..Default::default() };
+                        match zotero.list_item_tags(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_tag_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Attachment { cmd } => match cmd {
+                    ZoteroAttachmentCommand::List { search, sort, direction, limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("attachment".into()), q: search, sort, direction, limit: Some(limit), start, ..Default::default() };
+                        match zotero.list_items(&params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_attachment_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroAttachmentCommand::Get { key, json } => {
+                        match zotero.get_item(&key).await {
+                            Ok(item) => {
+                                if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroAttachmentCommand::File { key, output } => {
+                        match zotero.download_item_file(&key).await {
+                            Ok(bytes) => {
+                                if output == "-" {
+                                    use std::io::Write;
+                                    std::io::stdout().write_all(&bytes)
+                                        .unwrap_or_else(|e| exit_err(&e.to_string()));
+                                } else {
+                                    std::fs::write(&output, &bytes)
+                                        .unwrap_or_else(|e| exit_err(&e.to_string()));
+                                    eprintln!("Saved {} bytes to {output}", bytes.len());
+                                }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Annotation { cmd } => match cmd {
+                    ZoteroAnnotationCommand::List { limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("annotation".into()), limit: Some(limit), start, ..Default::default() };
+                        match zotero.list_items(&params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_annotation_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroAnnotationCommand::Get { key, json } => {
+                        match zotero.get_item(&key).await {
+                            Ok(item) => {
+                                if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Note { cmd } => match cmd {
+                    ZoteroNoteCommand::List { search, limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("note".into()), q: search, limit: Some(limit), start, ..Default::default() };
+                        match zotero.list_items(&params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_note_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroNoteCommand::Get { key, json } => {
+                        match zotero.get_item(&key).await {
+                            Ok(item) => {
+                                if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Collection { cmd } => match cmd {
+                    ZoteroCollectionCommand::List { sort, direction, limit, start, top, json } => {
+                        let params = CollectionListParams { sort, direction, limit: Some(limit), start };
+                        let result = if top {
+                            zotero.list_top_collections(&params).await
+                        } else {
+                            zotero.list_collections(&params).await
+                        };
+                        match result {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_collection_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroCollectionCommand::Get { key, json } => {
+                        match zotero.get_collection(&key).await {
+                            Ok(coll) => {
+                                if json { print_json(&coll); } else { print!("{}", format::format_zotero_collection_get(&coll)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroCollectionCommand::Works { key, search, qmode, tag, type_, sort, direction, limit, start, json } => {
+                        let params = ItemListParams {
+                            item_type: type_,
+                            q: search,
+                            qmode,
+                            tag,
+                            sort,
+                            direction,
+                            limit: Some(limit),
+                            start,
+                            ..Default::default()
+                        };
+                        match zotero.list_collection_top_items(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_work_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroCollectionCommand::Attachments { key, sort, direction, limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("attachment".into()), sort, direction, limit: Some(limit), start, ..Default::default() };
+                        match zotero.list_collection_items(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_attachment_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroCollectionCommand::Notes { key, search, sort, direction, limit, start, json } => {
+                        let params = ItemListParams { item_type: Some("note".into()), q: search, sort, direction, limit: Some(limit), start, ..Default::default() };
+                        match zotero.list_collection_items(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_note_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroCollectionCommand::Annotations { key, json } => {
+                        let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+                        let attachments = zotero.list_collection_items(&key, &att_params).await
+                            .unwrap_or_else(|e| exit_err(&e.to_string()));
+                        let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+                        let mut all_annotations = Vec::new();
+                        for att in &attachments.items {
+                            if !is_annotatable_attachment(att) { continue; }
+                            match zotero.list_item_children(&att.key, &ann_params).await {
+                                Ok(r) => all_annotations.extend(r.items),
+                                Err(_) => {},
+                            }
+                        }
+                        if json { print_json(&all_annotations); } else { print!("{}", format::format_zotero_annotation_list_vec(&all_annotations)); }
+                    }
+                    ZoteroCollectionCommand::Subcollections { key, sort, direction, limit, start, json } => {
+                        let params = CollectionListParams { sort, direction, limit: Some(limit), start };
+                        match zotero.list_subcollections(&key, &params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_collection_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroCollectionCommand::Tags { key, search, qmode, limit, start, top, json } => {
+                        let params = TagListParams { q: search, qmode, limit, start, ..Default::default() };
+                        let result = if top {
+                            zotero.list_collection_top_items_tags(&key, &params).await
+                        } else {
+                            zotero.list_collection_items_tags(&key, &params).await
+                        };
+                        match result {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_tag_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Tag { cmd } => match cmd {
+                    ZoteroTagCommand::List { search, qmode, sort, direction, limit, start, top, trash, json } => {
+                        let params = TagListParams { q: search, qmode, sort, direction, limit: Some(limit), start };
+                        let result = if trash {
+                            zotero.list_trash_tags(&params).await
+                        } else if top {
+                            zotero.list_top_items_tags(&params).await
+                        } else {
+                            zotero.list_tags(&params).await
+                        };
+                        match result {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_tag_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroTagCommand::Get { name, json } => {
+                        match zotero.get_tag(&name).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_tag_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Search { cmd } => match cmd {
+                    ZoteroSearchCommand::List { json } => {
+                        match zotero.list_searches().await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_search_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroSearchCommand::Get { key, json } => {
+                        match zotero.get_search(&key).await {
+                            Ok(search) => {
+                                if json { print_json(&search); } else { print!("{}", format::format_zotero_search_get(&search)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Group { cmd } => match cmd {
+                    ZoteroGroupCommand::List { json } => {
+                        match zotero.list_groups().await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_group_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
             }
         },
 

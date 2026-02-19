@@ -3,6 +3,7 @@ use papers_core::{
     InstitutionListParams, OpenAlexClient, PublisherListParams, SourceListParams,
     SubfieldListParams, TopicListParams, WorkListParams,
 };
+use papers_zotero::{CollectionListParams, ItemListParams, TagListParams, ZoteroClient};
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -919,7 +920,7 @@ async fn test_work_list_overlap_error() {
     assert!(err.contains("publication_year"));
 }
 
-// Format functions exposed for testing (re-use from main crate's format module)
+// Format functions exposed for testing (mirrors src/format.rs logic)
 mod papers_cli_format {
     use papers_core::summary::{
         AuthorSummary, DomainSummary, FieldSummary, FunderSummary, InstitutionSummary,
@@ -1252,5 +1253,1604 @@ mod papers_cli_format {
         out
     }
 
+    // ── Zotero format helpers ──────────────────────────────────────────────
+
+    use papers_zotero::{Collection, Creator, Group, Item, PagedResponse, SavedSearch, Tag};
+
+    fn strip_html(html: &str) -> String {
+        let mut out = String::with_capacity(html.len());
+        let mut in_tag = false;
+        for c in html.chars() {
+            match c {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => out.push(c),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn creator_display(c: &Creator) -> String {
+        if let Some(name) = &c.name {
+            name.clone()
+        } else {
+            match (&c.first_name, &c.last_name) {
+                (Some(f), Some(l)) => format!("{l}, {f}"),
+                (None, Some(l)) => l.clone(),
+                (Some(f), None) => f.clone(),
+                _ => "?".to_string(),
+            }
+        }
+    }
+
+    pub fn format_zotero_work_list(resp: &PagedResponse<Item>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} results · showing {}\n", n, resp.items.len()),
+            _ => format!("{} item(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, item) in resp.items.iter().enumerate() {
+            let title = item.data.title.as_deref().unwrap_or("(untitled)");
+            let year = item.data.date.as_deref()
+                .and_then(|d| {
+                    let y = d.split(['-', '/']).next()?;
+                    if y.len() == 4 && y.chars().all(|c| c.is_ascii_digit()) {
+                        Some(format!(" ({y})"))
+                    } else { None }
+                })
+                .unwrap_or_default();
+            out.push_str(&format!("\n {:>2}  [{}] {}{}\n", i + 1, item.key, title, year));
+            if !item.data.creators.is_empty() {
+                let authors: Vec<String> = item.data.creators.iter().take(3).map(creator_display).collect();
+                let suffix = if item.data.creators.len() > 3 { " et al." } else { "" };
+                out.push_str(&format!("     {}{suffix}\n", authors.join("; ")));
+            }
+            let mut meta_parts = Vec::new();
+            if let Some(j) = &item.data.publication_title { meta_parts.push(j.clone()); }
+            meta_parts.push(item.data.item_type.clone());
+            if let Some(doi) = &item.data.doi { meta_parts.push(format!("DOI: {doi}")); }
+            if !meta_parts.is_empty() {
+                out.push_str(&format!("     {}\n", meta_parts.join(" · ")));
+            }
+            if !item.data.tags.is_empty() {
+                let tag_names: Vec<&str> = item.data.tags.iter().map(|t| t.tag.as_str()).collect();
+                out.push_str(&format!("     Tags: {}\n", tag_names.join(", ")));
+            }
+        }
+        out
+    }
+
+    pub fn format_zotero_item_get(item: &Item) -> String {
+        let mut out = String::new();
+        let title = item.data.title.as_deref().unwrap_or("(untitled)");
+        out.push_str(&format!("{}: {}\n", item.data.item_type, title));
+        out.push_str(&format!("Key:  {}\n", item.key));
+        if let Some(doi) = &item.data.doi { out.push_str(&format!("DOI:  {doi}\n")); }
+        if let Some(date) = &item.data.date { out.push_str(&format!("Date: {date}\n")); }
+        if let Some(j) = &item.data.publication_title { out.push_str(&format!("Publication: {j}\n")); }
+        if !item.data.creators.is_empty() {
+            out.push_str("\nCreators:\n");
+            for (i, c) in item.data.creators.iter().enumerate() {
+                let name = creator_display(c);
+                out.push_str(&format!("  {:>2}. {} ({})\n", i + 1, name, c.creator_type));
+            }
+        }
+        if let Some(abs) = &item.data.abstract_note { out.push_str(&format!("\nAbstract:\n  {abs}\n")); }
+        if !item.data.tags.is_empty() {
+            let tag_names: Vec<&str> = item.data.tags.iter().map(|t| t.tag.as_str()).collect();
+            out.push_str(&format!("\nTags: {}\n", tag_names.join(", ")));
+        }
+        if let Some(note) = &item.data.note {
+            let stripped = strip_html(note);
+            let trimmed = stripped.trim();
+            if !trimmed.is_empty() {
+                out.push_str(&format!("\nNote:\n  {trimmed}\n"));
+            }
+        }
+        if let Some(ann_type) = item.data.extra_fields.get("annotationType").and_then(|v| v.as_str()) {
+            out.push_str(&format!("Annotation type: {ann_type}\n"));
+        }
+        if let Some(text) = item.data.extra_fields.get("annotationText").and_then(|v| v.as_str()) {
+            if !text.is_empty() { out.push_str(&format!("Text: {text}\n")); }
+        }
+        out
+    }
+
+    pub fn format_zotero_attachment_list(resp: &PagedResponse<Item>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} results · showing {}\n", n, resp.items.len()),
+            _ => format!("{} attachment(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, item) in resp.items.iter().enumerate() {
+            let display = item.data.filename.as_deref()
+                .or_else(|| item.data.url.as_deref())
+                .unwrap_or("(no file)");
+            let link_mode = item.data.link_mode.as_deref().unwrap_or("?");
+            out.push_str(&format!("\n {:>2}  [{}] {}\n", i + 1, item.key, display));
+            let mut parts = vec![link_mode.to_string()];
+            if let Some(parent) = &item.data.parent_item { parts.push(format!("parent: {parent}")); }
+            if let Some(ct) = &item.data.content_type { parts.push(ct.clone()); }
+            out.push_str(&format!("     {}\n", parts.join(" · ")));
+        }
+        out
+    }
+
+    pub fn format_zotero_annotation_list(resp: &PagedResponse<Item>) -> String {
+        if resp.items.is_empty() { return "No annotations.\n".to_string(); }
+        let header = match resp.total_results.filter(|&n| n > 0) {
+            Some(n) => format!("Found {} annotations · showing {}\n", n, resp.items.len()),
+            None => format!("{} annotation(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, item) in resp.items.iter().enumerate() {
+            push_annotation_entry(&mut out, i, item);
+        }
+        out
+    }
+
+    pub fn format_zotero_annotation_list_vec(items: &[Item]) -> String {
+        if items.is_empty() { return "No annotations.\n".to_string(); }
+        let mut out = format!("{} annotation(s)\n", items.len());
+        for (i, item) in items.iter().enumerate() {
+            push_annotation_entry(&mut out, i, item);
+        }
+        out
+    }
+
+    fn push_annotation_entry(out: &mut String, i: usize, item: &Item) {
+        let ann_type = item.data.extra_fields.get("annotationType").and_then(|v| v.as_str()).unwrap_or("?");
+        let page = item.data.extra_fields.get("annotationPageLabel").and_then(|v| v.as_str()).unwrap_or("");
+        let color = item.data.extra_fields.get("annotationColor").and_then(|v| v.as_str()).unwrap_or("");
+        let parent = item.data.parent_item.as_deref().unwrap_or("");
+        out.push_str(&format!("\n {:>2}  [{}] {}", i + 1, item.key, ann_type));
+        if !page.is_empty() { out.push_str(&format!(" (p. {page})")); }
+        if !color.is_empty() { out.push_str(&format!(" {color}")); }
+        out.push('\n');
+        if !parent.is_empty() { out.push_str(&format!("     Parent: {parent}\n")); }
+        if let Some(text) = item.data.extra_fields.get("annotationText").and_then(|v| v.as_str()) {
+            if !text.is_empty() { out.push_str(&format!("     \"{text}\"\n")); }
+        }
+        if let Some(comment) = item.data.extra_fields.get("annotationComment").and_then(|v| v.as_str()) {
+            if !comment.is_empty() { out.push_str(&format!("     Note: {comment}\n")); }
+        }
+    }
+
+    pub fn format_zotero_note_list(resp: &PagedResponse<Item>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} results · showing {}\n", n, resp.items.len()),
+            _ => format!("{} note(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, item) in resp.items.iter().enumerate() {
+            let parent = item.data.parent_item.as_deref().unwrap_or("(standalone)");
+            out.push_str(&format!("\n {:>2}  [{}] parent: {parent}\n", i + 1, item.key));
+            if let Some(note) = &item.data.note {
+                let stripped = strip_html(note);
+                let trimmed = stripped.trim().to_string();
+                if !trimmed.is_empty() {
+                    let preview = if trimmed.chars().count() > 80 {
+                        format!("{}…", trimmed.chars().take(80).collect::<String>())
+                    } else {
+                        trimmed
+                    };
+                    out.push_str(&format!("     {preview}\n"));
+                }
+            }
+        }
+        out
+    }
+
+    pub fn format_zotero_collection_list(resp: &PagedResponse<Collection>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} results · showing {}\n", n, resp.items.len()),
+            _ => format!("{} collection(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, coll) in resp.items.iter().enumerate() {
+            let parent = coll.data.parent_key().map(|k| format!(" (sub of {k})")).unwrap_or_default();
+            let items = coll.meta.num_items.map(|n| format!(", {n} items")).unwrap_or_default();
+            out.push_str(&format!("\n {:>2}  [{}] {}{parent}{items}\n", i + 1, coll.key, coll.data.name));
+        }
+        out
+    }
+
+    pub fn format_zotero_collection_get(coll: &Collection) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("Collection: {}\n", coll.data.name));
+        out.push_str(&format!("Key:   {}\n", coll.key));
+        if let Some(parent_key) = coll.data.parent_key() {
+            out.push_str(&format!("Parent: {parent_key}\n"));
+        } else {
+            out.push_str("Parent: (top-level)\n");
+        }
+        if let Some(n) = coll.meta.num_items { out.push_str(&format!("Items: {n}\n")); }
+        if let Some(n) = coll.meta.num_collections { out.push_str(&format!("Sub-collections: {n}\n")); }
+        out
+    }
+
+    pub fn format_zotero_tag_list(resp: &PagedResponse<Tag>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} tags · showing {}\n", n, resp.items.len()),
+            _ => format!("{} tag(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, tag) in resp.items.iter().enumerate() {
+            let count = tag.meta.num_items.map(|n| format!(" ({n} items)")).unwrap_or_default();
+            out.push_str(&format!("\n {:>2}  {}{count}\n", i + 1, tag.tag));
+        }
+        out
+    }
+
+    pub fn format_zotero_search_list(resp: &PagedResponse<SavedSearch>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} results · showing {}\n", n, resp.items.len()),
+            _ => format!("{} saved search(es)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, search) in resp.items.iter().enumerate() {
+            let n = search.data.conditions.len();
+            out.push_str(&format!("\n {:>2}  [{}] {}\n", i + 1, search.key, search.data.name));
+            out.push_str(&format!("     {n} condition(s)\n"));
+        }
+        out
+    }
+
+    pub fn format_zotero_search_get(search: &SavedSearch) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("Search: {}\n", search.data.name));
+        out.push_str(&format!("Key:    {}\n", search.key));
+        if !search.data.conditions.is_empty() {
+            out.push_str("\nConditions:\n");
+            for cond in &search.data.conditions {
+                out.push_str(&format!("  {} {} {}\n", cond.condition, cond.operator, cond.value));
+            }
+        }
+        out
+    }
+
+    pub fn format_zotero_group_list(resp: &PagedResponse<Group>) -> String {
+        let header = match resp.total_results {
+            Some(n) if n > 0 => format!("Found {} results · showing {}\n", n, resp.items.len()),
+            _ => format!("{} group(s)\n", resp.items.len()),
+        };
+        let mut out = header;
+        for (i, group) in resp.items.iter().enumerate() {
+            let gtype = group.data.group_type.as_deref().unwrap_or("?");
+            let items = group.meta.num_items.map(|n| format!(", {n} items")).unwrap_or_default();
+            out.push_str(&format!("\n {:>2}  [{}] {} ({gtype}){items}\n", i + 1, group.id, group.data.name));
+            if let Some(desc) = &group.data.description {
+                if !desc.is_empty() {
+                    let snippet = if desc.chars().count() > 100 {
+                        format!("{}…", desc.chars().take(100).collect::<String>())
+                    } else { desc.clone() };
+                    out.push_str(&format!("     {snippet}\n"));
+                }
+            }
+        }
+        out
+    }
+
 }
 
+// ── Zotero helpers ────────────────────────────────────────────────────────
+
+fn make_zotero_client(mock: &MockServer) -> ZoteroClient {
+    ZoteroClient::new("test", "test-key").with_base_url(mock.uri())
+}
+
+fn zotero_arr(body: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("Total-Results", "1")
+        .insert_header("Last-Modified-Version", "100")
+        .set_body_string(body)
+}
+
+fn zotero_arr_empty() -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("Total-Results", "0")
+        .insert_header("Last-Modified-Version", "100")
+        .set_body_string("[]")
+}
+
+fn z_items_body() -> String {
+    r#"[{"key":"ABC12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ABC12345","version":1,"itemType":"journalArticle","title":"Test Paper"}}]"#.to_string()
+}
+
+fn z_item_body() -> String {
+    r#"{"key":"ABC12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ABC12345","version":1,"itemType":"journalArticle","title":"Test Paper"}}"#.to_string()
+}
+
+fn z_item_with_collections_body() -> String {
+    r#"{"key":"ABC12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ABC12345","version":1,"itemType":"journalArticle","title":"Test Paper","collections":["COL12345"]}}"#.to_string()
+}
+
+fn z_collections_body() -> String {
+    r#"[{"key":"COL12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{"numCollections":0,"numItems":5},"data":{"key":"COL12345","version":1,"name":"Test Collection","parentCollection":false,"relations":{}}}]"#.to_string()
+}
+
+fn z_collection_body() -> String {
+    r#"{"key":"COL12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{"numCollections":0,"numItems":5},"data":{"key":"COL12345","version":1,"name":"Test Collection","parentCollection":false,"relations":{}}}"#.to_string()
+}
+
+fn z_tags_body() -> String {
+    r#"[{"tag":"TestTag","links":{},"meta":{"type":0,"numItems":5}}]"#.to_string()
+}
+
+fn z_searches_body() -> String {
+    r#"[{"key":"SRCH1234","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"data":{"key":"SRCH1234","version":1,"name":"Test Search","conditions":[]}}]"#.to_string()
+}
+
+fn z_search_body() -> String {
+    r#"{"key":"SRCH1234","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"data":{"key":"SRCH1234","version":1,"name":"Test Search","conditions":[]}}"#.to_string()
+}
+
+fn z_groups_body() -> String {
+    r#"[{"id":12345,"version":1,"links":{},"meta":{"numItems":10},"data":{"id":12345,"version":1,"name":"Test Group","owner":1,"type":"Private","description":""}}]"#.to_string()
+}
+
+fn z_item_rich_body() -> String {
+    r#"{"key":"RICH1234","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"RICH1234","version":1,"itemType":"journalArticle","title":"GPU Sorting Algorithms","date":"2024-03-15","DOI":"10.1234/gpu.2024","publicationTitle":"IEEE Transactions on Parallel Computing","creators":[{"creatorType":"author","firstName":"Alice","lastName":"Smith"},{"creatorType":"author","firstName":"Bob","lastName":"Jones"},{"creatorType":"author","firstName":"Carol","lastName":"Wu"},{"creatorType":"author","firstName":"Dave","lastName":"Lee"}],"abstractNote":"We present efficient GPU-based sorting algorithms.","tags":[{"tag":"GPU"},{"tag":"Sorting"}],"collections":["COL12345"]}}"#.to_string()
+}
+
+fn z_attachment_rich_body() -> String {
+    r#"[{"key":"ATT12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ATT12345","version":1,"itemType":"attachment","linkMode":"imported_file","contentType":"application/pdf","filename":"gpu_sorting.pdf","parentItem":"RICH1234"}}]"#.to_string()
+}
+
+fn z_annotation_rich_body() -> String {
+    r##"[{"key":"ANN12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ANN12345","version":1,"itemType":"annotation","parentItem":"ATT12345","annotationType":"highlight","annotationText":"GPU sorting outperforms CPU by 10x","annotationComment":"Important result","annotationPageLabel":"5","annotationColor":"#ffd400"}}]"##.to_string()
+}
+
+fn z_note_rich_body() -> String {
+    r#"[{"key":"NOTE5678","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"NOTE5678","version":1,"itemType":"note","note":"<p>This paper introduces a <b>parallel</b> sorting network.</p>","parentItem":"RICH1234"}}]"#.to_string()
+}
+
+fn z_collection_with_parent_body() -> String {
+    r#"[{"key":"SUB12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{"numCollections":0,"numItems":3},"data":{"key":"SUB12345","version":1,"name":"GPU Papers","parentCollection":"COL12345","relations":{}}}]"#.to_string()
+}
+
+fn z_tag_with_count_body() -> String {
+    r#"[{"tag":"Starred","links":{},"meta":{"type":0,"numItems":31}},{"tag":"Survey","links":{},"meta":{"type":0,"numItems":7}}]"#.to_string()
+}
+
+fn z_search_with_conditions_body() -> String {
+    r#"{"key":"SRCH5678","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"data":{"key":"SRCH5678","version":1,"name":"GPU Papers","conditions":[{"condition":"tag","operator":"is","value":"GPU"},{"condition":"itemType","operator":"is","value":"journalArticle"}]}}"#.to_string()
+}
+
+fn z_group_with_desc_body() -> String {
+    r#"[{"id":99999,"version":1,"links":{},"meta":{"numItems":42},"data":{"id":99999,"version":1,"name":"CompSci Reading Group","owner":1,"type":"PublicOpen","description":"A group for computer science paper discussions"}}]"#.to_string()
+}
+
+// ── Zotero work tests ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_work_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_top_items(&ItemListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Paper"));
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_work_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_item("ABC12345").await.unwrap();
+    assert_eq!(result.key, "ABC12345");
+    assert_eq!(result.data.title.as_deref(), Some("Test Paper"));
+}
+
+#[tokio::test]
+async fn test_zotero_work_tags() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/tags"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_item_tags("ABC12345", &TagListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("TestTag"));
+}
+
+#[tokio::test]
+async fn test_zotero_work_notes() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("note".into()), ..Default::default() };
+    let result = client.list_item_children("ABC12345", &params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_work_attachments() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let result = client.list_item_children("ABC12345", &params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_work_annotations_empty() {
+    // Multi-step: fetch attachments (empty), then annotations per attachment
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_arr_empty())
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let attachments = client.list_item_children("ABC12345", &att_params).await.unwrap();
+    let mut all_annotations = Vec::new();
+    for att in &attachments.items {
+        let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+        let ann = client.list_item_children(&att.key, &ann_params).await.unwrap();
+        all_annotations.extend(ann.items);
+    }
+    assert_eq!(all_annotations.len(), 0);
+}
+
+#[tokio::test]
+async fn test_zotero_work_collections() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_with_collections_body()))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_collection_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let item = client.get_item("ABC12345").await.unwrap();
+    let collection_keys = item.data.collections.clone();
+    let mut collections = Vec::new();
+    for key in &collection_keys {
+        collections.push(client.get_collection(key).await.unwrap());
+    }
+    assert_eq!(collections.len(), 1);
+    assert_eq!(collections[0].data.name, "Test Collection");
+}
+
+// ── Zotero attachment tests ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_attachment_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_attachment_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_item("ABC12345").await.unwrap();
+    assert_eq!(result.key, "ABC12345");
+}
+
+// ── Zotero annotation tests ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_annotation_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_annotation_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ANN12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_item("ANN12345").await.unwrap();
+    assert_eq!(result.data.title.as_deref(), Some("Test Paper"));
+}
+
+// ── Zotero note tests ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_note_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("note".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_note_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/NOTE1234"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_item("NOTE1234").await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Paper"));
+}
+
+// ── Zotero collection tests ───────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_collection_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections"))
+        .respond_with(zotero_arr(&z_collections_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_collections(&CollectionListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Collection"));
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_list_top() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/top"))
+        .respond_with(zotero_arr(&z_collections_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_top_collections(&CollectionListParams::default()).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_collection_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_collection("COL12345").await.unwrap();
+    assert_eq!(result.data.name, "Test Collection");
+}
+
+#[tokio::test]
+async fn test_zotero_collection_works() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items/top"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_collection_top_items("COL12345", &ItemListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Paper"));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_attachments() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let result = client.list_collection_items("COL12345", &params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_notes() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("note".into()), ..Default::default() };
+    let result = client.list_collection_items("COL12345", &params).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_annotations_empty() {
+    // Multi-step: fetch attachments (empty)
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items"))
+        .respond_with(zotero_arr_empty())
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let attachments = client.list_collection_items("COL12345", &att_params).await.unwrap();
+    let mut all_annotations = Vec::new();
+    for att in &attachments.items {
+        let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+        let ann = client.list_item_children(&att.key, &ann_params).await.unwrap();
+        all_annotations.extend(ann.items);
+    }
+    assert_eq!(all_annotations.len(), 0);
+}
+
+#[tokio::test]
+async fn test_zotero_collection_subcollections() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/collections"))
+        .respond_with(zotero_arr(&z_collections_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_subcollections("COL12345", &CollectionListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Collection"));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_tags() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items/tags"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_collection_items_tags("COL12345", &TagListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("TestTag"));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_tags_top() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items/top/tags"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_collection_top_items_tags("COL12345", &TagListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("TestTag"));
+}
+
+// ── Zotero tag tests ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_tag_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/tags"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_tags(&TagListParams::default()).await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("TestTag"));
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_tag_list_top() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top/tags"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_top_items_tags(&TagListParams::default()).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_tag_list_trash() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/trash/tags"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_trash_tags(&TagListParams::default()).await.unwrap();
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_tag_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/tags/Starred"))
+        .respond_with(zotero_arr(&z_tags_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_tag("Starred").await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("TestTag"));
+}
+
+// ── Zotero search tests ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_search_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/searches"))
+        .respond_with(zotero_arr(&z_searches_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_searches().await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Search"));
+    assert_eq!(result.total_results, Some(1));
+}
+
+#[tokio::test]
+async fn test_zotero_search_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/searches/SRCH1234"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_search_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_search("SRCH1234").await.unwrap();
+    assert_eq!(result.data.name, "Test Search");
+}
+
+// ── Zotero regression tests ───────────────────────────────────────────────
+
+/// Bug: format_zotero_note_list panicked on notes with Unicode content (β, →, ", etc.)
+/// when the note text was longer than 80 bytes, because `&str[..80]` cuts mid-codepoint.
+/// Fix: use `chars().take(80)` instead of byte slicing.
+/// This test verifies the ZoteroClient correctly returns Unicode note content so that
+/// the format function receives the correct data (the format fix itself is in src/format.rs).
+#[tokio::test]
+async fn test_zotero_note_unicode_content_parsed_correctly() {
+    let mock = MockServer::start().await;
+    // Note containing multi-byte Unicode: β (2 bytes), → (3 bytes), " " (3 bytes each)
+    let note_content = r#"<p>A function f : Rⁿ → R is affine: f(x) = a·x + β, where β ∈ ℝ and "Linear programs" are defined.</p>"#;
+    let note_body = format!(
+        r#"[{{"key":"NOTE1234","version":1,"library":{{"type":"user","id":1,"name":"test","links":{{}}}},"links":{{}},"meta":{{}},"data":{{"key":"NOTE1234","version":1,"itemType":"note","note":"{}"}}}}]"#,
+        note_content.replace('"', "\\\"")
+    );
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&note_body),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("note".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    assert_eq!(result.items.len(), 1);
+    let note_html = result.items[0].data.note.as_deref().unwrap_or("");
+    assert!(note_html.contains('β'), "note should contain Unicode character β");
+    assert!(note_html.contains('→'), "note should contain Unicode character →");
+}
+
+/// Bug: format_zotero_tag_list (and other format functions) showed "Found 0 tags · showing N"
+/// when the Zotero API returned Total-Results: 0 for item-scoped tag endpoints.
+/// Fix: treat total_results == Some(0) as absent, fall back to items.len().
+/// This test verifies that item-scoped tag responses carry total_results = Some(0).
+#[tokio::test]
+async fn test_zotero_work_tags_total_results_is_zero() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/WORK1234/tags"))
+        .respond_with(
+            // Zotero returns Total-Results: 0 for item-scoped tag endpoints
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "0")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_tags_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_item_tags("WORK1234", &TagListParams::default()).await.unwrap();
+    // total_results is 0 from API header, but items are present
+    assert_eq!(result.total_results, Some(0));
+    assert_eq!(result.items.len(), 1, "items should still be present despite total_results=0");
+    // The format function must NOT display "Found 0 tags" when items exist.
+    // (The fix is in src/format.rs: match total_results { Some(n) if n > 0 => ... })
+    assert_eq!(result.items[0].tag, "TestTag");
+}
+
+/// Bug: zotero_work_annotations and zotero_collection_annotations called /children on ALL
+/// attachments (including .md, .json, .txt files), triggering a Zotero API 400 error:
+/// "API error (status 400): /children can only be called on PDF, EPUB, and snapshot attachments".
+/// Fix: filter to content_type = application/pdf, application/epub+zip, or text/html only.
+#[tokio::test]
+async fn test_zotero_work_annotations_skips_non_pdf_attachments() {
+    let mock = MockServer::start().await;
+    let attachments_body = r#"[
+        {"key":"PDF01234","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"PDF01234","version":1,"itemType":"attachment","contentType":"application/pdf","linkMode":"imported_url","parentItem":"WORK1234"}},
+        {"key":"MDK12345","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"MDK12345","version":1,"itemType":"attachment","contentType":"text/plain","linkMode":"imported_file","parentItem":"WORK1234"}}
+    ]"#;
+    let annotation_body = r#"[{"key":"ANN01234","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ANN01234","version":1,"itemType":"annotation","parentItem":"PDF01234"}}]"#;
+
+    // Return mixed attachments (PDF + markdown)
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/WORK1234/children"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "2")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(attachments_body),
+        )
+        .mount(&mock)
+        .await;
+    // Only register PDF children — markdown children endpoint is intentionally absent.
+    // If the code calls /items/MDK12345/children, wiremock returns 404 and the test would catch it.
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/PDF01234/children"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(annotation_body),
+        )
+        .mount(&mock)
+        .await;
+
+    let client = make_zotero_client(&mock);
+    let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let attachments = client.list_item_children("WORK1234", &att_params).await.unwrap();
+    assert_eq!(attachments.items.len(), 2);
+
+    // Apply the same filter as the fixed CLI/MCP handlers
+    let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+    let mut all_annotations = Vec::new();
+    for att in &attachments.items {
+        let is_annotatable = matches!(
+            att.data.content_type.as_deref(),
+            Some("application/pdf") | Some("application/epub+zip") | Some("text/html")
+        );
+        if !is_annotatable { continue; }
+        match client.list_item_children(&att.key, &ann_params).await {
+            Ok(r) => all_annotations.extend(r.items),
+            Err(_) => {},
+        }
+    }
+    // Only the PDF attachment's annotation was retrieved; markdown was skipped
+    assert_eq!(all_annotations.len(), 1);
+    assert_eq!(all_annotations[0].key, "ANN01234");
+}
+
+// ── Zotero group tests ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_group_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/groups"))
+        .respond_with(zotero_arr(&z_groups_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_groups().await.unwrap();
+    let json = serde_json::to_string(&result).unwrap();
+    assert!(json.contains("Test Group"));
+    assert_eq!(result.total_results, Some(1));
+}
+
+// ── Zotero format text tests ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_work_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(zotero_arr(&z_items_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_top_items(&ItemListParams::default()).await.unwrap();
+    let text = papers_cli_format::format_zotero_work_list(&result);
+    assert!(text.contains("Test Paper"), "should contain title");
+    assert!(text.contains("ABC12345"), "should contain key");
+}
+
+#[tokio::test]
+async fn test_zotero_work_list_rich_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&format!("[{}]", z_item_rich_body())),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_top_items(&ItemListParams::default()).await.unwrap();
+    let text = papers_cli_format::format_zotero_work_list(&result);
+    assert!(text.contains("GPU Sorting Algorithms"), "should contain title");
+    assert!(text.contains("RICH1234"), "should contain key");
+    assert!(text.contains("2024"), "should contain year");
+    assert!(text.contains("Smith, Alice"), "should contain first author");
+    assert!(text.contains("et al."), "should show et al. for >3 authors");
+    assert!(text.contains("IEEE Transactions"), "should contain publication");
+    assert!(text.contains("GPU"), "should show tags");
+}
+
+#[tokio::test]
+async fn test_zotero_work_get_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/RICH1234"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_rich_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_item("RICH1234").await.unwrap();
+    let text = papers_cli_format::format_zotero_item_get(&result);
+    assert!(text.contains("GPU Sorting Algorithms"), "should contain title");
+    assert!(text.contains("RICH1234"), "should contain key");
+    assert!(text.contains("10.1234/gpu.2024"), "should contain DOI");
+    assert!(text.contains("2024-03-15"), "should contain date");
+    assert!(text.contains("Smith, Alice"), "should contain author");
+    assert!(text.contains("(author)"), "should show creator type");
+    assert!(text.contains("GPU-based sorting"), "should contain abstract");
+    assert!(text.contains("GPU"), "should show tags");
+}
+
+#[tokio::test]
+async fn test_zotero_attachment_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_attachment_rich_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    let text = papers_cli_format::format_zotero_attachment_list(&result);
+    assert!(text.contains("gpu_sorting.pdf"), "should contain filename");
+    assert!(text.contains("ATT12345"), "should contain key");
+    assert!(text.contains("imported_file"), "should contain link mode");
+    assert!(text.contains("application/pdf"), "should contain content type");
+    assert!(text.contains("RICH1234"), "should contain parent key");
+}
+
+#[tokio::test]
+async fn test_zotero_annotation_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_annotation_rich_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    let text = papers_cli_format::format_zotero_annotation_list(&result);
+    assert!(text.contains("highlight"), "should contain annotation type");
+    assert!(text.contains("ANN12345"), "should contain key");
+    assert!(text.contains("p. 5"), "should contain page label");
+    assert!(text.contains("GPU sorting outperforms"), "should contain annotation text");
+    assert!(text.contains("Important result"), "should contain comment");
+    assert!(text.contains("ATT12345"), "should contain parent");
+}
+
+#[tokio::test]
+async fn test_zotero_note_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_note_rich_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let params = ItemListParams { item_type: Some("note".into()), ..Default::default() };
+    let result = client.list_items(&params).await.unwrap();
+    let text = papers_cli_format::format_zotero_note_list(&result);
+    assert!(text.contains("NOTE5678"), "should contain key");
+    assert!(text.contains("RICH1234"), "should contain parent key");
+    assert!(text.contains("parallel"), "should contain stripped text");
+    assert!(!text.contains("<b>"), "should strip HTML tags");
+}
+
+#[tokio::test]
+async fn test_zotero_collection_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_collection_with_parent_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_collections(&CollectionListParams::default()).await.unwrap();
+    let text = papers_cli_format::format_zotero_collection_list(&result);
+    assert!(text.contains("GPU Papers"), "should contain collection name");
+    assert!(text.contains("SUB12345"), "should contain key");
+    assert!(text.contains("COL12345"), "should show parent key");
+    assert!(text.contains("3 items"), "should show item count");
+}
+
+#[tokio::test]
+async fn test_zotero_collection_get_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_collection_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_collection("COL12345").await.unwrap();
+    let text = papers_cli_format::format_zotero_collection_get(&result);
+    assert!(text.contains("Test Collection"), "should contain name");
+    assert!(text.contains("COL12345"), "should contain key");
+    assert!(text.contains("(top-level)"), "should show top-level for root collection");
+    assert!(text.contains("5"), "should show item count");
+}
+
+#[tokio::test]
+async fn test_zotero_tag_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/tags"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "2")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_tag_with_count_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_tags(&TagListParams::default()).await.unwrap();
+    let text = papers_cli_format::format_zotero_tag_list(&result);
+    assert!(text.contains("Starred"), "should contain tag name");
+    assert!(text.contains("31 items"), "should show item count for Starred");
+    assert!(text.contains("Survey"), "should contain second tag");
+    assert!(text.contains("7 items"), "should show item count for Survey");
+    assert!(text.contains("Found 2 tags"), "should show total count");
+}
+
+#[tokio::test]
+async fn test_zotero_search_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/searches"))
+        .respond_with(zotero_arr(&z_searches_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_searches().await.unwrap();
+    let text = papers_cli_format::format_zotero_search_list(&result);
+    assert!(text.contains("Test Search"), "should contain search name");
+    assert!(text.contains("SRCH1234"), "should contain key");
+    assert!(text.contains("0 condition(s)"), "should show condition count");
+}
+
+#[tokio::test]
+async fn test_zotero_search_get_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/searches/SRCH5678"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_search_with_conditions_body()))
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.get_search("SRCH5678").await.unwrap();
+    let text = papers_cli_format::format_zotero_search_get(&result);
+    assert!(text.contains("GPU Papers"), "should contain search name");
+    assert!(text.contains("SRCH5678"), "should contain key");
+    assert!(text.contains("tag is GPU"), "should show condition");
+    assert!(text.contains("itemType is journalArticle"), "should show second condition");
+}
+
+#[tokio::test]
+async fn test_zotero_group_list_text() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/groups"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(&z_group_with_desc_body()),
+        )
+        .mount(&mock)
+        .await;
+    let client = make_zotero_client(&mock);
+    let result = client.list_groups().await.unwrap();
+    let text = papers_cli_format::format_zotero_group_list(&result);
+    assert!(text.contains("CompSci Reading Group"), "should contain group name");
+    assert!(text.contains("99999"), "should contain group ID");
+    assert!(text.contains("PublicOpen"), "should contain group type");
+    assert!(text.contains("42 items"), "should show item count");
+    assert!(text.contains("computer science paper discussions"), "should show description");
+}
+
+// ── Cross-reference chain tests ───────────────────────────────────────────
+//
+// These tests exercise multi-step call chains where the result of one API call
+// is used as the key/parameter for a subsequent call, mirroring what the CLI
+// commands do in main.rs.
+
+/// work → annotations (non-empty): list a work's attachments, then get annotations
+/// on each annotatable attachment. Mirrors ZoteroWorkCommand::Annotations logic.
+#[tokio::test]
+async fn test_zotero_work_annotations_nonempty() {
+    let mock = MockServer::start().await;
+
+    let attachments = r#"[
+        {"key":"PDFABC01","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"PDFABC01","version":1,"itemType":"attachment","contentType":"application/pdf","linkMode":"imported_file","parentItem":"WORK0001"}},
+        {"key":"EPUBABC1","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"EPUBABC1","version":1,"itemType":"attachment","contentType":"application/epub+zip","linkMode":"imported_file","parentItem":"WORK0001"}}
+    ]"#;
+    let pdf_annotations = r#"[
+        {"key":"ANN00001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ANN00001","version":1,"itemType":"annotation","parentItem":"PDFABC01","annotationType":"highlight","annotationText":"First finding","annotationPageLabel":"3"}},
+        {"key":"ANN00002","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ANN00002","version":1,"itemType":"annotation","parentItem":"PDFABC01","annotationType":"note","annotationComment":"My note"}}
+    ]"#;
+    let epub_annotations = r#"[
+        {"key":"ANN00003","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ANN00003","version":1,"itemType":"annotation","parentItem":"EPUBABC1","annotationType":"highlight","annotationText":"EPUB highlight"}}
+    ]"#;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/WORK0001/children"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "2")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(attachments))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/PDFABC01/children"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "2")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(pdf_annotations))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/EPUBABC1/children"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "1")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(epub_annotations))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Step 1: list attachments for the work
+    let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let attachments = client.list_item_children("WORK0001", &att_params).await.unwrap();
+    assert_eq!(attachments.items.len(), 2, "both attachments returned");
+
+    // Step 2: for each annotatable attachment, fetch annotations (mirrors CLI logic)
+    let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+    let mut all_annotations = Vec::new();
+    for att in &attachments.items {
+        let is_annotatable = matches!(
+            att.data.content_type.as_deref(),
+            Some("application/pdf") | Some("application/epub+zip") | Some("text/html")
+        );
+        if !is_annotatable { continue; }
+        let ann = client.list_item_children(&att.key, &ann_params).await.unwrap();
+        // Verify parent linkage: each annotation's parent_item == the attachment key
+        for a in &ann.items {
+            assert_eq!(a.data.parent_item.as_deref(), Some(att.key.as_str()),
+                "annotation parent_item should equal the attachment key");
+        }
+        all_annotations.extend(ann.items);
+    }
+
+    assert_eq!(all_annotations.len(), 3, "2 PDF + 1 EPUB annotations");
+    let keys: Vec<&str> = all_annotations.iter().map(|a| a.key.as_str()).collect();
+    assert!(keys.contains(&"ANN00001"));
+    assert!(keys.contains(&"ANN00002"));
+    assert!(keys.contains(&"ANN00003"));
+
+    // Verify text format output is sensible
+    let text = papers_cli_format::format_zotero_annotation_list_vec(&all_annotations);
+    assert!(text.contains("highlight"), "should show annotation type");
+    assert!(text.contains("First finding"), "should show annotation text");
+    assert!(text.contains("My note"), "should show comment");
+    assert!(text.contains("EPUB highlight"), "should include EPUB annotations");
+    assert!(text.contains("p. 3"), "should show page label");
+}
+
+/// collection → annotations (non-empty): list a collection's attachments, then fetch
+/// annotations for each. Mirrors ZoteroCollectionCommand::Annotations logic.
+#[tokio::test]
+async fn test_zotero_collection_annotations_nonempty() {
+    let mock = MockServer::start().await;
+
+    let col_attachments = r#"[
+        {"key":"PDFC0001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"PDFC0001","version":1,"itemType":"attachment","contentType":"application/pdf","linkMode":"imported_file","parentItem":"COLWORK1"}},
+        {"key":"TXTC0001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"TXTC0001","version":1,"itemType":"attachment","contentType":"text/plain","linkMode":"imported_file","parentItem":"COLWORK1"}}
+    ]"#;
+    let col_annotations = r#"[
+        {"key":"CANN0001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"CANN0001","version":1,"itemType":"annotation","parentItem":"PDFC0001","annotationType":"highlight","annotationText":"Collection annotation","annotationPageLabel":"7"}}
+    ]"#;
+
+    // Collection items endpoint returns both PDF and text attachment
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL99999/items"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "2")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(col_attachments))
+        .mount(&mock).await;
+
+    // Only PDF children endpoint is registered — text/plain should be skipped
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/PDFC0001/children"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "1")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(col_annotations))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Step 1: list collection items filtered to attachments
+    let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let attachments = client.list_collection_items("COL99999", &att_params).await.unwrap();
+    assert_eq!(attachments.items.len(), 2);
+
+    // Step 2: fetch annotations only for annotatable attachments
+    let ann_params = ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+    let mut all_annotations = Vec::new();
+    for att in &attachments.items {
+        let is_annotatable = matches!(
+            att.data.content_type.as_deref(),
+            Some("application/pdf") | Some("application/epub+zip") | Some("text/html")
+        );
+        if !is_annotatable { continue; }
+        match client.list_item_children(&att.key, &ann_params).await {
+            Ok(r) => all_annotations.extend(r.items),
+            Err(_) => {}
+        }
+    }
+
+    // Only the PDF annotation; text/plain was skipped
+    assert_eq!(all_annotations.len(), 1);
+    assert_eq!(all_annotations[0].key, "CANN0001");
+    assert_eq!(all_annotations[0].data.parent_item.as_deref(), Some("PDFC0001"),
+        "annotation parent_item should equal PDF attachment key");
+
+    let text = papers_cli_format::format_zotero_annotation_list_vec(&all_annotations);
+    assert!(text.contains("Collection annotation"));
+    assert!(text.contains("p. 7"));
+}
+
+/// collection → works → get item (cross-reference key reuse):
+/// list works in a collection, extract a key from the result, then get that item
+/// individually — verifying the key returned in a list response is valid for a get call.
+#[tokio::test]
+async fn test_zotero_collection_works_then_get_item() {
+    let mock = MockServer::start().await;
+
+    // Collection works list returns a rich item
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL11111/items/top"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "1")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(&format!("[{}]", z_item_rich_body())))
+        .mount(&mock).await;
+
+    // Getting that same item by key should return its full data
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/RICH1234"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(z_item_rich_body()))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Step 1: list works in collection
+    let list = client.list_collection_top_items("COL11111", &ItemListParams::default()).await.unwrap();
+    assert_eq!(list.items.len(), 1);
+    let key_from_list = list.items[0].key.clone();
+    let title_from_list = list.items[0].data.title.clone();
+
+    // Step 2: use the key to get the full item
+    let item = client.get_item(&key_from_list).await.unwrap();
+
+    // The key and title should be consistent across both calls
+    assert_eq!(item.key, key_from_list, "get_item key should match key from list");
+    assert_eq!(item.data.title, title_from_list, "title should be consistent");
+    assert_eq!(item.key, "RICH1234");
+    assert_eq!(item.data.title.as_deref(), Some("GPU Sorting Algorithms"));
+
+    // The full item should contain richer data not present in list summary
+    assert!(item.data.doi.is_some(), "full item should have DOI");
+    assert!(item.data.abstract_note.is_some(), "full item should have abstract");
+}
+
+/// work → collections → work (full round-trip):
+/// get a work, fetch its collections, then list works in one of those collections
+/// and confirm the original work key appears in the results.
+#[tokio::test]
+async fn test_zotero_work_to_collection_to_works_roundtrip() {
+    let mock = MockServer::start().await;
+
+    // Work item has one collection: COL22222
+    let work_body = r#"{"key":"WORK2222","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK2222","version":1,"itemType":"journalArticle","title":"Round-trip Test Paper","collections":["COL22222"]}}"#;
+    let collection_body = r#"{"key":"COL22222","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{"numCollections":0,"numItems":3},"data":{"key":"COL22222","version":1,"name":"My Reading List","parentCollection":false,"relations":{}}}"#;
+    // Collection's works include our work
+    let collection_works = r#"[{"key":"WORK2222","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK2222","version":1,"itemType":"journalArticle","title":"Round-trip Test Paper","collections":["COL22222"]}}]"#;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/WORK2222"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_body))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL22222"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(collection_body))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL22222/items/top"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "3")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(collection_works))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Step 1: get the work
+    let work = client.get_item("WORK2222").await.unwrap();
+    assert!(!work.data.collections.is_empty(), "work should belong to collections");
+    let col_key = work.data.collections[0].clone();
+    assert_eq!(col_key, "COL22222");
+
+    // Step 2: fetch the collection using the key from the work
+    let collection = client.get_collection(&col_key).await.unwrap();
+    assert_eq!(collection.key, col_key, "collection key should match");
+    assert_eq!(collection.data.name, "My Reading List");
+    assert_eq!(collection.meta.num_items, Some(3), "collection should report its item count");
+
+    // Step 3: list works in the collection and verify the original work appears
+    let works = client.list_collection_top_items(&col_key, &ItemListParams::default()).await.unwrap();
+    let work_keys: Vec<&str> = works.items.iter().map(|w| w.key.as_str()).collect();
+    assert!(work_keys.contains(&"WORK2222"), "original work should appear in its collection");
+
+    // Also verify: the work's collections field includes the collection we navigated to
+    let found_work = works.items.iter().find(|w| w.key == "WORK2222").unwrap();
+    assert!(found_work.data.collections.contains(&col_key),
+        "work's collections should include the collection we listed it from");
+}
+
+/// attachment → parent item chain: verify the parent_item field on an attachment
+/// is a valid work key that can be fetched.
+#[tokio::test]
+async fn test_zotero_attachment_parent_work_chain() {
+    let mock = MockServer::start().await;
+
+    let attachment_body = r#"{"key":"ATT33333","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ATT33333","version":1,"itemType":"attachment","contentType":"application/pdf","linkMode":"imported_file","filename":"paper.pdf","parentItem":"WORK3333"}}"#;
+    let parent_work_body = r#"{"key":"WORK3333","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK3333","version":1,"itemType":"journalArticle","title":"Parent Work","collections":[]}}"#;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ATT33333"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(attachment_body))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/WORK3333"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(parent_work_body))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Step 1: get the attachment
+    let att = client.get_item("ATT33333").await.unwrap();
+    assert_eq!(att.data.item_type, "attachment");
+    assert_eq!(att.data.content_type.as_deref(), Some("application/pdf"));
+    let parent_key = att.data.parent_item.as_ref().expect("attachment should have parent_item");
+    assert_eq!(parent_key, "WORK3333");
+
+    // Step 2: use the parent_item key to fetch the work
+    let work = client.get_item(parent_key).await.unwrap();
+    assert_eq!(work.key, "WORK3333");
+    assert_eq!(work.data.item_type, "journalArticle");
+    assert_eq!(work.data.title.as_deref(), Some("Parent Work"));
+}
+
+/// annotation → attachment → work (three-hop chain):
+/// get annotation, use parent_item to get attachment, use attachment.parent_item to get work.
+#[tokio::test]
+async fn test_zotero_annotation_to_attachment_to_work_chain() {
+    let mock = MockServer::start().await;
+
+    let annotation_body = r#"{"key":"ANN44444","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ANN44444","version":1,"itemType":"annotation","parentItem":"ATT44444","annotationType":"highlight","annotationText":"Key insight","annotationPageLabel":"12"}}"#;
+    let attachment_body = r#"{"key":"ATT44444","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"ATT44444","version":1,"itemType":"attachment","contentType":"application/pdf","linkMode":"imported_file","filename":"paper.pdf","parentItem":"WORK4444"}}"#;
+    let work_body = r#"{"key":"WORK4444","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK4444","version":1,"itemType":"journalArticle","title":"The Work","collections":[]}}"#;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ANN44444"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(annotation_body))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ATT44444"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(attachment_body))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/WORK4444"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_body))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Hop 1: get annotation
+    let annotation = client.get_item("ANN44444").await.unwrap();
+    assert_eq!(annotation.data.item_type, "annotation");
+    let att_key = annotation.data.parent_item.as_ref().expect("annotation should have parent_item");
+    assert_eq!(att_key, "ATT44444");
+
+    // Hop 2: get attachment using annotation's parent_item
+    let attachment = client.get_item(att_key).await.unwrap();
+    assert_eq!(attachment.data.item_type, "attachment");
+    assert_eq!(attachment.data.content_type.as_deref(), Some("application/pdf"));
+    let work_key = attachment.data.parent_item.as_ref().expect("attachment should have parent_item");
+    assert_eq!(work_key, "WORK4444");
+
+    // Hop 3: get work using attachment's parent_item
+    let work = client.get_item(work_key).await.unwrap();
+    assert_eq!(work.data.item_type, "journalArticle");
+    assert_eq!(work.data.title.as_deref(), Some("The Work"));
+}
+
+/// collection → subcollections → works in subcollection:
+/// navigate the collection hierarchy three levels deep.
+#[tokio::test]
+async fn test_zotero_collection_hierarchy_navigation() {
+    let mock = MockServer::start().await;
+
+    let root_col = r#"{"key":"ROOT0001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{"numCollections":1,"numItems":0},"data":{"key":"ROOT0001","version":1,"name":"Root","parentCollection":false,"relations":{}}}"#;
+    let sub_cols = r#"[{"key":"SUB00001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{"numCollections":0,"numItems":2},"data":{"key":"SUB00001","version":1,"name":"Sub Collection","parentCollection":"ROOT0001","relations":{}}}]"#;
+    let sub_works = r#"[
+        {"key":"SUBWRK1","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"SUBWRK1","version":1,"itemType":"journalArticle","title":"Paper A","collections":["SUB00001"]}},
+        {"key":"SUBWRK2","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"SUBWRK2","version":1,"itemType":"journalArticle","title":"Paper B","collections":["SUB00001"]}}
+    ]"#;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/ROOT0001"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(root_col))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/ROOT0001/collections"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "1")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(sub_cols))
+        .mount(&mock).await;
+
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/SUB00001/items/top"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Total-Results", "2")
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(sub_works))
+        .mount(&mock).await;
+
+    let client = make_zotero_client(&mock);
+
+    // Step 1: get root collection
+    let root = client.get_collection("ROOT0001").await.unwrap();
+    assert_eq!(root.meta.num_collections, Some(1), "root has 1 sub-collection");
+    assert_eq!(root.meta.num_items, Some(0), "root has 0 direct items");
+    assert!(root.data.parent_key().is_none(), "root should be top-level");
+
+    // Step 2: list sub-collections of root
+    let subs = client.list_subcollections("ROOT0001", &CollectionListParams::default()).await.unwrap();
+    assert_eq!(subs.items.len(), 1);
+    let sub_key = subs.items[0].key.clone();
+    let sub_parent = subs.items[0].data.parent_key();
+    assert_eq!(sub_parent, Some("ROOT0001"), "sub-collection parent should be root");
+
+    // Step 3: list works in sub-collection using the key from step 2
+    let works = client.list_collection_top_items(&sub_key, &ItemListParams::default()).await.unwrap();
+    assert_eq!(works.items.len(), 2);
+
+    // Verify both works claim membership in the sub-collection
+    for w in &works.items {
+        assert!(w.data.collections.contains(&sub_key),
+            "each work's collections should include the sub-collection key");
+    }
+
+    let titles: Vec<&str> = works.items.iter().filter_map(|w| w.data.title.as_deref()).collect();
+    assert!(titles.contains(&"Paper A"));
+    assert!(titles.contains(&"Paper B"));
+}

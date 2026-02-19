@@ -29,6 +29,7 @@ Commands:
   domain       Research domains (broadest level of topic hierarchy, 4 total)
   field        Academic fields (second level of topic hierarchy, 26 total)
   subfield     Research subfields (third level of topic hierarchy, ~252 total)
+  zotero       Your personal Zotero reference library
   help         Print this message or the help of the given subcommand(s)
 
 Options:
@@ -337,6 +338,69 @@ accept either an OpenAlex ID or a search string that gets resolved to the top re
 
 `publisher list`, `funder list`, `field list`, `subfield list`, and `domain list` also support
 relevant subsets of `--country`, `--continent`, `--domain`, `--field`, `--citations`, and `--works`.
+
+## Zotero personal library
+
+Access your [Zotero](https://www.zotero.org) reference library from the command line.
+
+**Setup** — set two environment variables:
+
+```sh
+export ZOTERO_USER_ID=<your-user-id>   # from zotero.org/settings/keys
+export ZOTERO_API_KEY=<your-api-key>   # from zotero.org/settings/keys
+```
+
+### Entities and commands
+
+| Entity | Commands |
+|--------|----------|
+| `work` | `list`, `get`, `collections`, `notes`, `attachments`, `annotations`, `tags` |
+| `attachment` | `list`, `get`, `file` |
+| `annotation` | `list`, `get` |
+| `note` | `list`, `get` |
+| `collection` | `list`, `get`, `works`, `attachments`, `notes`, `annotations`, `subcollections`, `tags` |
+| `tag` | `list`, `get` |
+| `search` | `list`, `get` |
+| `group` | `list` |
+
+All commands accept `--json` to output raw JSON.
+
+### Examples
+
+```sh
+# List your starred papers (sorted by date modified)
+papers zotero work list --tag Starred --sort dateModified --direction desc
+
+# Search for rendering papers
+papers zotero work list --search "rendering" --type conferencePaper -n 5
+
+# Get a single work
+papers zotero work get <key> --json
+
+# List collections a work belongs to
+papers zotero work collections <key>
+
+# List annotations on all PDFs of a work
+papers zotero work annotations <key>
+
+# List all attachments
+papers zotero attachment list --limit 20
+
+# Download a PDF attachment
+papers zotero attachment file <attachment-key> --output paper.pdf
+
+# Browse collections
+papers zotero collection list --top
+papers zotero collection works <collection-key> --type conferencePaper
+
+# Search tags
+papers zotero tag list --search "Star" --qmode startsWith
+papers zotero tag list --top
+
+# Saved searches and groups
+papers zotero search list
+papers zotero group list
+```
 
 ## Raw filter syntax
 

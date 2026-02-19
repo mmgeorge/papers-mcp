@@ -768,6 +768,20 @@ async fn test_work_get_by_doi_passes_through() {
 }
 
 #[tokio::test]
+async fn test_work_get_by_bare_doi_adds_doi_prefix() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works/doi:10.1109/test"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let work = api::work_get(&client, "10.1109/test", &GetParams::default()).await.unwrap();
+    assert_eq!(work.display_name, Some("A Great Paper".to_string()));
+}
+
+#[tokio::test]
 async fn test_work_get_not_found_error() {
     let mock = MockServer::start().await;
     // Return empty results for the search

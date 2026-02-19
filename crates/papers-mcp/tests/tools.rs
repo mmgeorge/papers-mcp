@@ -1,5 +1,6 @@
 use papers_core::OpenAlexClient;
 use papers_mcp::server::PapersMcp;
+use papers_zotero::ZoteroClient;
 use rmcp::handler::server::wrapper::Parameters;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -55,6 +56,126 @@ fn minimal_find_json() -> String {
 fn make_server(mock_server: &MockServer) -> PapersMcp {
     let client = OpenAlexClient::new().with_base_url(mock_server.uri());
     PapersMcp::with_client(client)
+}
+
+fn make_zotero_server(mock_server: &MockServer) -> PapersMcp {
+    let zotero = ZoteroClient::new("test", "test-key").with_base_url(mock_server.uri());
+    PapersMcp::with_zotero(zotero)
+}
+
+fn zotero_array_response(body: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("Total-Results", "1")
+        .insert_header("Last-Modified-Version", "100")
+        .set_body_string(body)
+}
+
+fn zotero_items_body() -> String {
+    r#"[{
+        "key": "ABC12345",
+        "version": 1,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {},
+        "meta": {},
+        "data": {
+            "key": "ABC12345",
+            "version": 1,
+            "itemType": "journalArticle",
+            "title": "Test Paper"
+        }
+    }]"#
+    .to_string()
+}
+
+fn zotero_item_body() -> String {
+    r#"{
+        "key": "ABC12345",
+        "version": 1,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {},
+        "meta": {},
+        "data": {
+            "key": "ABC12345",
+            "version": 1,
+            "itemType": "journalArticle",
+            "title": "Test Paper"
+        }
+    }"#
+    .to_string()
+}
+
+fn zotero_collections_body() -> String {
+    r#"[{
+        "key": "COL12345",
+        "version": 1,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {},
+        "meta": {"numCollections": 0, "numItems": 5},
+        "data": {
+            "key": "COL12345",
+            "version": 1,
+            "name": "Test Collection",
+            "parentCollection": false,
+            "relations": {}
+        }
+    }]"#
+    .to_string()
+}
+
+fn zotero_collection_body() -> String {
+    r#"{
+        "key": "COL12345",
+        "version": 1,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {},
+        "meta": {"numCollections": 0, "numItems": 5},
+        "data": {
+            "key": "COL12345",
+            "version": 1,
+            "name": "Test Collection",
+            "parentCollection": false,
+            "relations": {}
+        }
+    }"#
+    .to_string()
+}
+
+fn zotero_tags_body() -> String {
+    r#"[{"tag": "TestTag", "links": {}, "meta": {"type": 0, "numItems": 5}}]"#.to_string()
+}
+
+fn zotero_searches_body() -> String {
+    r#"[{
+        "key": "SRCH1234",
+        "version": 1,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {},
+        "data": {
+            "key": "SRCH1234",
+            "version": 1,
+            "name": "Test Search",
+            "conditions": []
+        }
+    }]"#
+    .to_string()
+}
+
+fn zotero_groups_body() -> String {
+    r#"[{
+        "id": 12345,
+        "version": 1,
+        "links": {},
+        "meta": {"numItems": 10},
+        "data": {
+            "id": 12345,
+            "version": 1,
+            "name": "Test Group",
+            "owner": 1,
+            "type": "Private",
+            "description": ""
+        }
+    }]"#
+    .to_string()
 }
 
 // ── List tool tests ──────────────────────────────────────────────────
@@ -209,10 +330,10 @@ async fn test_api_error_returns_error_result() {
 // ── Tool listing tests ───────────────────────────────────────────────
 
 #[test]
-fn test_tool_router_has_29_tools() {
+fn test_tool_router_has_54_tools() {
     let router = PapersMcp::tool_router();
     let tools = router.list_all();
-    assert_eq!(tools.len(), 29);
+    assert_eq!(tools.len(), 54);
 }
 
 #[test]
@@ -251,6 +372,32 @@ fn test_all_tool_names_present() {
         "subfield_autocomplete",
         "work_find",
         "work_text",
+        // Zotero tools
+        "zotero_work_list",
+        "zotero_work_get",
+        "zotero_work_collections",
+        "zotero_work_notes",
+        "zotero_work_attachments",
+        "zotero_work_annotations",
+        "zotero_work_tags",
+        "zotero_attachment_list",
+        "zotero_attachment_get",
+        "zotero_annotation_list",
+        "zotero_annotation_get",
+        "zotero_note_list",
+        "zotero_note_get",
+        "zotero_collection_list",
+        "zotero_collection_get",
+        "zotero_collection_works",
+        "zotero_collection_attachments",
+        "zotero_collection_notes",
+        "zotero_collection_annotations",
+        "zotero_collection_subcollections",
+        "zotero_collection_tags",
+        "zotero_tag_list",
+        "zotero_tag_get",
+        "zotero_search_list",
+        "zotero_group_list",
     ];
 
     for name in &expected {
@@ -1552,5 +1699,372 @@ async fn test_source_list_with_open_flag() {
     let server = make_server(&mock);
     let params = serde_json::from_value(serde_json::json!({"open": true})).unwrap();
     let result = server.source_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+// ── Zotero tool tests ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_work_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_work_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_work_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_item_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_get(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_work_collections() {
+    let mock = MockServer::start().await;
+    // Item with a collection membership
+    let item_with_collection = r#"{
+        "key": "ABC12345", "version": 1,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {}, "meta": {},
+        "data": {"key": "ABC12345", "version": 1, "itemType": "journalArticle",
+                 "title": "Test", "collections": ["COL12345"]}
+    }"#;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(item_with_collection))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_collection_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_collections(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_work_notes() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_notes(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_work_attachments() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_attachments(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_work_annotations() {
+    let mock = MockServer::start().await;
+    // Return empty attachment list so the second step (fetching annotations) is skipped
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_array_response("[]"))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_annotations(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_work_tags() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/tags"))
+        .respond_with(zotero_array_response(&zotero_tags_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_tags(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_attachment_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_attachment_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_attachment_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_item_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_attachment_get(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_annotation_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_annotation_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_annotation_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_item_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_annotation_get(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_note_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_note_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_note_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_item_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_note_get(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections"))
+        .respond_with(zotero_array_response(&zotero_collections_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_collection_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_collection_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_get(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_works() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items/top"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_works(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_attachments() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_attachments(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_notes() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_notes(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_annotations() {
+    let mock = MockServer::start().await;
+    // Return empty attachment list so the second step is skipped
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items"))
+        .respond_with(zotero_array_response("[]"))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_annotations(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_subcollections() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/collections"))
+        .respond_with(zotero_array_response(&zotero_collections_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_subcollections(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_collection_tags() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items/tags"))
+        .respond_with(zotero_array_response(&zotero_tags_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "COL12345"})).unwrap();
+    let result = server.zotero_collection_tags(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_tag_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/tags"))
+        .respond_with(zotero_array_response(&zotero_tags_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_tag_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_tag_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/tags/TestTag"))
+        .respond_with(zotero_array_response(&zotero_tags_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"name": "TestTag"})).unwrap();
+    let result = server.zotero_tag_get(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_search_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/searches"))
+        .respond_with(zotero_array_response(&zotero_searches_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_search_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_zotero_group_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/groups"))
+        .respond_with(zotero_array_response(&zotero_groups_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_group_list(Parameters(params)).await;
     assert!(result.is_ok());
 }

@@ -1,6 +1,7 @@
 # papers-mcp
 
 MCP server wrapping the `papers` crate (which wraps `papers-openalex`), built with `rmcp` v0.15.
+Also exposes Zotero personal library access via `papers-zotero`.
 
 ## Architecture
 
@@ -8,8 +9,8 @@ MCP server wrapping the `papers` crate (which wraps `papers-openalex`), built wi
 src/
   lib.rs       — module declarations
   main.rs      — entry point: create PapersMcp, serve on stdio
-  server.rs    — PapersMcp struct + 28 tool methods + ServerHandler impl
-  params.rs    — 4 tool parameter structs (schemars + serde)
+  server.rs    — PapersMcp struct + 54 tool methods + ServerHandler impl
+  params.rs    — 19 tool parameter structs (schemars + serde)
 tests/
   tools.rs     — wiremock integration tests for tool invocation
 ```
@@ -24,25 +25,60 @@ See `../papers/CHANGES.md` for how responses differ from the raw OpenAlex API.
 
 ### server.rs
 
-- `PapersMcp` struct holds an `OpenAlexClient` (via `papers::OpenAlexClient`) and a `ToolRouter<Self>`
+- `PapersMcp` struct holds an `OpenAlexClient`, `Option<ZoteroClient>`, `Option<DatalabClient>`, and a `ToolRouter<Self>`
 - `#[tool_router]` macro on the impl block generates a `tool_router()` constructor
 - `#[tool]` on each method registers it as an MCP tool with auto-generated JSON Schema
 - `#[tool_handler]` on the `ServerHandler` impl generates `call_tool`, `list_tools`, `get_tool`
 - Each tool method takes `Parameters<T>` and returns `Result<String, String>`
 - Success: JSON-serialized API response. Error: error message string.
-- All 28 tools delegate to `papers::api::*` functions (no direct papers-openalex imports)
-- List tools return slim `SlimListResponse<XxxSummary>` via `papers::api::*_list()`
-- Get/autocomplete/find tools return full entities via `papers::api::*_get/autocomplete/find()`
+- OpenAlex tools (29) delegate to `papers::api::*` functions (no direct papers-openalex imports)
+- Zotero tools (25) call `self.zotero` directly — see Zotero tools section below
+
+#### Zotero tools (25)
+
+All Zotero tools start with:
+```rust
+let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+```
+
+Multi-step tools chain multiple `ZoteroClient` calls:
+- `zotero_work_collections`: `get_item(key)` → `get_collection(ck)` for each key in `data.collections`
+- `zotero_work_annotations`: `list_item_children(key, attachment)` → `list_item_children(att_key, annotation)` per attachment
+- `zotero_collection_annotations`: `list_collection_items(key, attachment)` → `list_item_children(att_key, annotation)` per attachment
+
+Zotero tools by group:
+| Group | Tools |
+|-------|-------|
+| Work | `zotero_work_list`, `zotero_work_get`, `zotero_work_collections`, `zotero_work_notes`, `zotero_work_attachments`, `zotero_work_annotations`, `zotero_work_tags` |
+| Attachment | `zotero_attachment_list`, `zotero_attachment_get` |
+| Annotation | `zotero_annotation_list`, `zotero_annotation_get` |
+| Note | `zotero_note_list`, `zotero_note_get` |
+| Collection | `zotero_collection_list`, `zotero_collection_get`, `zotero_collection_works`, `zotero_collection_attachments`, `zotero_collection_notes`, `zotero_collection_annotations`, `zotero_collection_subcollections`, `zotero_collection_tags` |
+| Tag | `zotero_tag_list`, `zotero_tag_get` |
+| Other | `zotero_search_list`, `zotero_group_list` |
+
+For testing, use `PapersMcp::with_zotero(ZoteroClient::new("test", "key").with_base_url(mock.uri()))`.
+
+**Critical**: Use struct literal construction for `ItemListParams`, `CollectionListParams`, and
+`TagListParams` — do NOT use the builder. `bon`'s type-state changes the generic on each `.field()`
+call, making mutable variable reassignment impossible. Example:
+```rust
+let params = ItemListParams { item_type: Some("note".into()), limit: p.limit, ..Default::default() };
+```
 
 ### params.rs
 
-4 structs with `Deserialize` + `JsonSchema`:
-- `ListToolParams` — 10 optional fields for list endpoints
+19 structs with `Deserialize` + `JsonSchema`:
+- `WorkListToolParams`, `AuthorListToolParams`, etc. — entity list params with conversion methods
 - `GetToolParams` — required `id` + optional `select`
 - `AutocompleteToolParams` — required `q`
 - `FindWorksToolParams` — required `query`, optional `count` and `filter`
-
-Each has a conversion method to the corresponding `papers`/`papers-openalex` params type.
+- `WorkTextToolParams` — required `key`
+- `ZoteroWorkListToolParams`, `ZoteroWorkChildrenToolParams`, `ZoteroWorkTagsToolParams`
+- `ZoteroAttachmentListToolParams`, `ZoteroAnnotationListToolParams`, `ZoteroNoteListToolParams`
+- `ZoteroCollectionListToolParams`, `ZoteroCollectionWorksToolParams`, `ZoteroCollectionNotesToolParams`
+- `ZoteroCollectionSubcollectionsToolParams`, `ZoteroCollectionTagsToolParams`
+- `ZoteroTagListToolParams`, `ZoteroKeyToolParams`, `ZoteroTagGetToolParams`, `ZoteroNoParamsToolParams`
 
 ## How to update
 

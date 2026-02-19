@@ -109,6 +109,7 @@ fn looks_like_identifier(input: &str, entity_type: &str) -> bool {
 /// - `https://openalex.org/domains/3` → `3`
 /// - `domains/3` → `3`
 /// - `W123` → `W123` (unchanged)
+/// - `10.1234/foo` → `doi:10.1234/foo` (bare DOI needs prefix for OpenAlex API)
 fn bare_id_for_get(input: &str, entity_type: &str) -> String {
     // Strip full OpenAlex URL prefix
     let id = input.strip_prefix("https://openalex.org/").unwrap_or(input);
@@ -119,6 +120,11 @@ fn bare_id_for_get(input: &str, entity_type: &str) -> String {
         "subfields" => id.strip_prefix("subfields/").unwrap_or(id),
         _ => id,
     };
+    // Bare DOIs (e.g. "10.1234/foo") need the "doi:" prefix for the OpenAlex /works/{id}
+    // endpoint. DOIs already prefixed with "doi:" or "https://doi.org/" are left unchanged.
+    if id.starts_with("10.") && id.contains('/') {
+        return format!("doi:{id}");
+    }
     id.to_string()
 }
 

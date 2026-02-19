@@ -683,6 +683,278 @@ impl FindWorksToolParams {
     }
 }
 
+// ── Zotero tool params ────────────────────────────────────────────────────
+
+/// Deserialize `Option<u32>` accepting both JSON integers and quoted strings.
+/// Some MCP clients serialize numeric parameters as strings ("10" vs 10).
+fn lax_optional_u32<'de, D>(d: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Lax {
+        Int(u32),
+        Str(String),
+    }
+    match Option::<Lax>::deserialize(d)? {
+        None => Ok(None),
+        Some(Lax::Int(n)) => Ok(Some(n)),
+        Some(Lax::Str(s)) if s.is_empty() => Ok(None),
+        Some(Lax::Str(s)) => s.parse::<u32>().map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
+/// Deserialize `Option<u64>` accepting both JSON integers and quoted strings.
+fn lax_optional_u64<'de, D>(d: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Lax {
+        Int(u64),
+        Str(String),
+    }
+    match Option::<Lax>::deserialize(d)? {
+        None => Ok(None),
+        Some(Lax::Int(n)) => Ok(Some(n)),
+        Some(Lax::Str(s)) if s.is_empty() => Ok(None),
+        Some(Lax::Str(s)) => s.parse::<u64>().map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
+/// Parameters for the `zotero_work_list` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroWorkListToolParams {
+    /// Quick text search (title, creator, year).
+    pub search: Option<String>,
+    /// Search scope: `"titleCreatorYear"` (default) or `"everything"`.
+    pub qmode: Option<String>,
+    /// Filter by tag name. `||` for OR, `-` prefix for NOT.
+    pub tag: Option<String>,
+    /// Narrow to a specific bibliographic type (e.g. `"journalArticle"`, `"book"`).
+    pub item_type: Option<String>,
+    /// Fetch specific item keys (comma-separated, max 50).
+    pub item_key: Option<String>,
+    /// Only items modified after this library version (for sync).
+    #[serde(default, deserialize_with = "lax_optional_u64")]
+    pub since: Option<u64>,
+    /// Sort field: `dateAdded`, `dateModified`, `title`, `creator`, `date`, etc.
+    pub sort: Option<String>,
+    /// Sort direction: `"asc"` or `"desc"`.
+    pub direction: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for work/collection child-list tools (notes, attachments).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroWorkChildrenToolParams {
+    /// Item key.
+    pub key: String,
+    /// Results per page (1–100).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_work_tags` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroWorkTagsToolParams {
+    /// Work key.
+    pub key: String,
+    /// Filter tags by name.
+    pub search: Option<String>,
+    /// Search mode: `"startsWith"` (default) or `"contains"`.
+    pub qmode: Option<String>,
+    /// Results per page (1–100).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_attachment_list` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroAttachmentListToolParams {
+    /// Search by filename or title.
+    pub search: Option<String>,
+    /// Sort field: `dateAdded`, `dateModified`, `title`, `accessDate`.
+    pub sort: Option<String>,
+    /// Sort direction: `"asc"` or `"desc"`.
+    pub direction: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_annotation_list` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroAnnotationListToolParams {
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_note_list` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroNoteListToolParams {
+    /// Search note content.
+    pub search: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_collection_list` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroCollectionListToolParams {
+    /// Sort field: `"title"`, `"dateAdded"`, or `"dateModified"`.
+    pub sort: Option<String>,
+    /// Sort direction: `"asc"` or `"desc"`.
+    pub direction: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+    /// Scope: `"all"` (default) lists all collections; `"top"` lists only root-level.
+    pub scope: Option<String>,
+}
+
+/// Parameters for the `zotero_collection_works` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroCollectionWorksToolParams {
+    /// Collection key.
+    pub key: String,
+    /// Text search (title, creator, year).
+    pub search: Option<String>,
+    /// Search scope: `"titleCreatorYear"` or `"everything"`.
+    pub qmode: Option<String>,
+    /// Tag filter.
+    pub tag: Option<String>,
+    /// Narrow to a specific bibliographic type (e.g. `"journalArticle"`).
+    pub item_type: Option<String>,
+    /// Sort field.
+    pub sort: Option<String>,
+    /// Sort direction: `"asc"` or `"desc"`.
+    pub direction: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_collection_notes` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroCollectionNotesToolParams {
+    /// Collection key.
+    pub key: String,
+    /// Text search within note content.
+    pub search: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_collection_subcollections` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroCollectionSubcollectionsToolParams {
+    /// Collection key.
+    pub key: String,
+    /// Sort field: `"title"`, `"dateAdded"`, or `"dateModified"`.
+    pub sort: Option<String>,
+    /// Sort direction: `"asc"` or `"desc"`.
+    pub direction: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+}
+
+/// Parameters for the `zotero_collection_tags` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroCollectionTagsToolParams {
+    /// Collection key.
+    pub key: String,
+    /// Filter tags by name.
+    pub search: Option<String>,
+    /// Search mode: `"startsWith"` or `"contains"`.
+    pub qmode: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+    /// When true, return only tags on top-level items in the collection.
+    pub top: Option<bool>,
+}
+
+/// Parameters for the `zotero_tag_list` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroTagListToolParams {
+    /// Filter tag names.
+    pub search: Option<String>,
+    /// Search mode: `"startsWith"` (default) or `"contains"`.
+    pub qmode: Option<String>,
+    /// Sort field.
+    pub sort: Option<String>,
+    /// Sort direction: `"asc"` or `"desc"`.
+    pub direction: Option<String>,
+    /// Results per page (1–100, default 25).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub limit: Option<u32>,
+    /// Pagination offset (0-based).
+    #[serde(default, deserialize_with = "lax_optional_u32")]
+    pub start: Option<u32>,
+    /// Scope: `"all"` (default) = global index, `"top"` = top-level items only, `"trash"` = trashed items.
+    pub scope: Option<String>,
+}
+
+/// Parameters for single-key Zotero endpoints.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroKeyToolParams {
+    /// Item, collection, or search key.
+    pub key: String,
+}
+
+/// Parameters for the `zotero_tag_get` tool.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroTagGetToolParams {
+    /// Tag name (URL-encoded internally).
+    pub name: String,
+}
+
+/// Parameters for Zotero tools that require no arguments.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroNoParamsToolParams {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

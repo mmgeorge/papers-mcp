@@ -1,23 +1,25 @@
 # papers-cli
 
 CLI binary over the `papers` shared crate. Provides a `papers` command for querying
-the OpenAlex academic research database from the terminal.
+the OpenAlex academic research database and your personal Zotero reference library.
 
 ## Architecture
 
 ```
 src/
   main.rs      — tokio main; parse Cli; dispatch to papers::api::* functions
-  cli.rs       — all clap structs (Cli, EntityCommand, WorkCommand, etc.)
+  cli.rs       — all clap structs (Cli, EntityCommand, WorkCommand, ZoteroCommand, etc.)
   format.rs    — human-readable text formatters for each entity/response type
 tests/
   cli.rs       — wiremock integration tests (format output + slim JSON assertions)
 ```
 
-Imports only `papers::*` — no direct dependency on `papers-openalex`.
+Imports only `papers::*` for OpenAlex — no direct dependency on `papers-openalex`.
+Imports `papers_zotero::ZoteroClient` directly for Zotero commands.
 
-## CLI commands (21 total)
+## CLI commands (48 total)
 
+### OpenAlex commands (21)
 ```
 papers work list   [-s <query>] [-f <filter>] [--sort <field>] [-n <per_page=10>]
                    [--page <n>] [--cursor <c>] [--sample <n>] [--seed <n>] [--json]
@@ -31,6 +33,47 @@ papers institution list / get / autocomplete
 papers topic list / get
 papers publisher list / get / autocomplete
 papers funder list / get / autocomplete
+```
+
+### Zotero commands (27)
+
+Requires `ZOTERO_USER_ID` and `ZOTERO_API_KEY` env vars. Exits with error if not set.
+
+```
+papers zotero work list        [-s <q>] [--tag <t>] [--type <t>] [--sort <f>] [-n <n>] [--json]
+papers zotero work get         <key> [--json]
+papers zotero work collections <key> [--json]
+papers zotero work notes       <key> [-n <n>] [--json]
+papers zotero work attachments <key> [-n <n>] [--json]
+papers zotero work annotations <key> [--json]
+papers zotero work tags        <key> [-q <q>] [--json]
+
+papers zotero attachment list  [-s <q>] [--sort <f>] [-n <n>] [--json]
+papers zotero attachment get   <key> [--json]
+papers zotero attachment file  <key> -o <output-path>
+
+papers zotero annotation list  [-n <n>] [--json]
+papers zotero annotation get   <key> [--json]
+
+papers zotero note list        [-s <q>] [-n <n>] [--json]
+papers zotero note get         <key> [--json]
+
+papers zotero collection list           [--sort <f>] [-n <n>] [--top] [--json]
+papers zotero collection get    <key>   [--json]
+papers zotero collection works  <key>   [-s <q>] [--type <t>] [--sort <f>] [-n <n>] [--json]
+papers zotero collection attachments <key> [-n <n>] [--json]
+papers zotero collection notes  <key>   [-s <q>] [-n <n>] [--json]
+papers zotero collection annotations <key> [--json]
+papers zotero collection subcollections <key> [--sort <f>] [-n <n>] [--json]
+papers zotero collection tags   <key>   [-q <q>] [--top] [--json]
+
+papers zotero tag list         [-q <q>] [--sort <f>] [-n <n>] [--top] [--trash] [--json]
+papers zotero tag get          <name>   [--json]
+
+papers zotero search list      [--json]
+papers zotero search get       <key>    [--json]
+
+papers zotero group list       [--json]
 ```
 
 Default output is human-readable text. Add `--json` for raw JSON.
@@ -48,18 +91,25 @@ Before calling the API, `main.rs` checks `std::env::var("OPENALEX_KEY")`.
 If absent, exits with an error message and non-zero status.
 Do not call the API if the key is missing.
 
-## How to add a new command
+## How to add a new OpenAlex command
 
 1. Add the clap variant to the appropriate `*Command` enum in `cli.rs`
 2. Add a formatter in `format.rs` (text output)
 3. Wire the new variant into the `match` in `main.rs`, calling `papers::api::*`
 4. Add tests in `tests/cli.rs` — at least text + JSON modes
 
+## How to add a new Zotero command
+
+1. Add the variant to the appropriate `Zotero*Command` enum in `cli.rs`
+2. Add a formatter in `format.rs` using `papers_zotero` types
+3. Wire into the `EntityCommand::Zotero { cmd }` arm in `main.rs`, calling `ZoteroClient` directly
+4. Add tests in `tests/cli.rs` — Zotero commands call client methods directly (not `papers::api::*`)
+
 ## Key notes
 
-- `format.rs` formatters take references to response types from `papers::*`
-- Formatters for slim types (`SlimListResponse<XxxSummary>`) for list commands
-- Formatters for full entity types (`Work`, `Author`, etc.) for get commands
+- `format.rs` formatters take references to response types from `papers::*` or `papers_zotero::*`
+- Formatters for slim types (`SlimListResponse<XxxSummary>`) for OpenAlex list commands
+- Formatters for full entity types (`Work`, `Author`, etc.) for OpenAlex get commands
 - `format_autocomplete` and `format_find_works` are shared across all entities
 - All list commands default to `per_page = 10`
 - `exit_err` in main.rs prints to stderr and exits with code 1
@@ -69,3 +119,8 @@ Do not call the API if the key is missing.
 - Do NOT add `papers-openalex` as a direct dependency — use `papers::*` only
 - `FindWorksParams` builder uses consumed-builder pattern for optional fields:
   use intermediate `let mut builder = ...` + `if let Some(v) = opt { builder = builder.field(v); }`
+- `ZoteroClient` params (`ItemListParams`, `CollectionListParams`, `TagListParams`) use struct literal
+  construction: `ItemListParams { item_type: Some("note".into()), limit, start, ..Default::default() }`
+  Do NOT use the builder — bon's type-state changes the generic on each `.field()` call, making
+  mutable variable reassignment impossible.
+- Zotero commands call `ZoteroClient::from_env()` at the top of the `Zotero` arm; exit early if Err

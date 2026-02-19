@@ -14,6 +14,12 @@ use crate::params::{
     FindWorksToolParams, FunderListToolParams, GetToolParams, InstitutionListToolParams,
     PublisherListToolParams, SourceListToolParams, SubfieldListToolParams, TopicListToolParams,
     WorkListToolParams, WorkTextToolParams,
+    ZoteroAnnotationListToolParams, ZoteroAttachmentListToolParams, ZoteroCollectionListToolParams,
+    ZoteroCollectionNotesToolParams, ZoteroCollectionSubcollectionsToolParams,
+    ZoteroCollectionTagsToolParams, ZoteroCollectionWorksToolParams, ZoteroKeyToolParams,
+    ZoteroNoParamsToolParams, ZoteroNoteListToolParams, ZoteroTagGetToolParams,
+    ZoteroTagListToolParams, ZoteroWorkChildrenToolParams, ZoteroWorkListToolParams,
+    ZoteroWorkTagsToolParams,
 };
 
 #[derive(Clone)]
@@ -54,6 +60,24 @@ impl PapersMcp {
             tool_router: Self::tool_router(),
         }
     }
+
+    /// Create a server with an explicit Zotero client (for testing).
+    pub fn with_zotero(zotero: ZoteroClient) -> Self {
+        Self {
+            client: OpenAlexClient::new(),
+            zotero: Some(zotero),
+            datalab: None,
+            tool_router: Self::tool_router(),
+        }
+    }
+}
+
+/// Returns true if this attachment supports annotation children (PDF, EPUB, or HTML snapshot).
+fn is_annotatable_attachment(att: &papers_zotero::Item) -> bool {
+    matches!(
+        att.data.content_type.as_deref(),
+        Some("application/pdf") | Some("application/epub+zip") | Some("text/html")
+    )
 }
 
 fn json_result<T: Serialize, E: std::fmt::Display>(result: Result<T, E>) -> Result<String, String> {
@@ -261,6 +285,274 @@ impl PapersMcp {
     #[tool]
     pub async fn work_find(&self, Parameters(params): Parameters<FindWorksToolParams>) -> Result<String, String> {
         json_result(papers_core::api::work_find(&self.client, &params.into_find_params()).await)
+    }
+
+    // ── Zotero tools ─────────────────────────────────────────────────────
+
+    /// List bibliographic items in your Zotero library (journalArticle, book, conferencePaper, etc.).
+    /// Excludes notes, attachments, and annotations. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_list(&self, Parameters(p): Parameters<ZoteroWorkListToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams {
+            item_type: p.item_type,
+            q: p.search,
+            qmode: p.qmode,
+            tag: p.tag,
+            item_key: p.item_key,
+            since: p.since,
+            sort: p.sort,
+            direction: p.direction,
+            limit: p.limit,
+            start: p.start,
+            ..Default::default()
+        };
+        json_result(z.list_top_items(&params).await)
+    }
+
+    /// Get a single bibliographic item by Zotero key. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.get_item(&p.key).await)
+    }
+
+    /// List the collections a work belongs to. Multi-step: reads item record then resolves collection names.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_collections(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let item = z.get_item(&p.key).await.map_err(|e| e.to_string())?;
+        let col_keys = item.data.collections.clone();
+        let mut collections = Vec::new();
+        for ck in &col_keys {
+            match z.get_collection(ck).await {
+                Ok(c) => collections.push(c),
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        json_result::<Vec<_>, String>(Ok(collections))
+    }
+
+    /// List notes attached to a specific work. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_notes(&self, Parameters(p): Parameters<ZoteroWorkChildrenToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("note".into()), limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_item_children(&p.key, &params).await)
+    }
+
+    /// List file attachments of a specific work. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_attachments(&self, Parameters(p): Parameters<ZoteroWorkChildrenToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_item_children(&p.key, &params).await)
+    }
+
+    /// List all PDF annotations across all attachments of a work. Multi-step: fetches attachments
+    /// then annotations per attachment. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_annotations(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+        let attachments = z.list_item_children(&p.key, &att_params).await.map_err(|e| e.to_string())?;
+        let ann_params = papers_zotero::ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+        let mut all_annotations = Vec::new();
+        for att in &attachments.items {
+            if !is_annotatable_attachment(att) { continue; }
+            if let Ok(r) = z.list_item_children(&att.key, &ann_params).await {
+                all_annotations.extend(r.items);
+            }
+        }
+        json_result::<Vec<_>, String>(Ok(all_annotations))
+    }
+
+    /// List tags attached to a specific work. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_tags(&self, Parameters(p): Parameters<ZoteroWorkTagsToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::TagListParams { q: p.search, qmode: p.qmode, limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_item_tags(&p.key, &params).await)
+    }
+
+    /// List all attachment items in the library (PDFs, snapshots, links).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_attachment_list(&self, Parameters(p): Parameters<ZoteroAttachmentListToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), q: p.search, sort: p.sort, direction: p.direction, limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_items(&params).await)
+    }
+
+    /// Get a single attachment item by key. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_attachment_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.get_item(&p.key).await)
+    }
+
+    /// List all annotation items in the library (highlights, comments from the PDF reader).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_annotation_list(&self, Parameters(p): Parameters<ZoteroAnnotationListToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("annotation".into()), limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_items(&params).await)
+    }
+
+    /// Get a single annotation by key. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_annotation_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.get_item(&p.key).await)
+    }
+
+    /// List all note items in the library (user-written text notes, child or standalone).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_note_list(&self, Parameters(p): Parameters<ZoteroNoteListToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("note".into()), q: p.search, limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_items(&params).await)
+    }
+
+    /// Get a single note by key. Full HTML content is in the `data.note` field.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_note_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.get_item(&p.key).await)
+    }
+
+    /// List collections in the Zotero library. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_list(&self, Parameters(p): Parameters<ZoteroCollectionListToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::CollectionListParams { sort: p.sort, direction: p.direction, limit: p.limit, start: p.start };
+        let result = if p.scope.as_deref() == Some("top") {
+            z.list_top_collections(&params).await
+        } else {
+            z.list_collections(&params).await
+        };
+        json_result(result)
+    }
+
+    /// Get a single collection by key. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.get_collection(&p.key).await)
+    }
+
+    /// List bibliographic works within a collection (excludes notes, attachments, annotations).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_works(&self, Parameters(p): Parameters<ZoteroCollectionWorksToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams {
+            item_type: p.item_type,
+            q: p.search,
+            qmode: p.qmode,
+            tag: p.tag,
+            sort: p.sort,
+            direction: p.direction,
+            limit: p.limit,
+            start: p.start,
+            ..Default::default()
+        };
+        json_result(z.list_collection_top_items(&p.key, &params).await)
+    }
+
+    /// List attachment items within a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_attachments(&self, Parameters(p): Parameters<ZoteroWorkChildrenToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_collection_items(&p.key, &params).await)
+    }
+
+    /// List note items within a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_notes(&self, Parameters(p): Parameters<ZoteroCollectionNotesToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::ItemListParams { item_type: Some("note".into()), q: p.search, limit: p.limit, start: p.start, ..Default::default() };
+        json_result(z.list_collection_items(&p.key, &params).await)
+    }
+
+    /// List annotations on PDFs within a collection. Multi-step: fetches attachments then
+    /// annotations per attachment. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_annotations(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+        let attachments = z.list_collection_items(&p.key, &att_params).await.map_err(|e| e.to_string())?;
+        let ann_params = papers_zotero::ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
+        let mut all_annotations = Vec::new();
+        for att in &attachments.items {
+            if !is_annotatable_attachment(att) { continue; }
+            if let Ok(r) = z.list_item_children(&att.key, &ann_params).await {
+                all_annotations.extend(r.items);
+            }
+        }
+        json_result::<Vec<_>, String>(Ok(all_annotations))
+    }
+
+    /// List sub-collections of a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_subcollections(&self, Parameters(p): Parameters<ZoteroCollectionSubcollectionsToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::CollectionListParams { sort: p.sort, direction: p.direction, limit: p.limit, start: p.start };
+        json_result(z.list_subcollections(&p.key, &params).await)
+    }
+
+    /// List tags on items within a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_collection_tags(&self, Parameters(p): Parameters<ZoteroCollectionTagsToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::TagListParams { q: p.search, qmode: p.qmode, limit: p.limit, start: p.start, ..Default::default() };
+        let result = if p.top == Some(true) {
+            z.list_collection_top_items_tags(&p.key, &params).await
+        } else {
+            z.list_collection_items_tags(&p.key, &params).await
+        };
+        json_result(result)
+    }
+
+    /// List tags from the global library tag index (with per-tag item counts).
+    /// Scope: `"all"` (default), `"top"` (top-level items only), or `"trash"`.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_tag_list(&self, Parameters(p): Parameters<ZoteroTagListToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let params = papers_zotero::TagListParams { q: p.search, qmode: p.qmode, sort: p.sort, direction: p.direction, limit: p.limit, start: p.start };
+        let result = match p.scope.as_deref() {
+            Some("trash") => z.list_trash_tags(&params).await,
+            Some("top") => z.list_top_items_tags(&params).await,
+            _ => z.list_tags(&params).await,
+        };
+        json_result(result)
+    }
+
+    /// Get a specific tag by name. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_tag_get(&self, Parameters(p): Parameters<ZoteroTagGetToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.get_tag(&p.name).await)
+    }
+
+    /// List all saved searches in the library. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_search_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.list_searches().await)
+    }
+
+    /// List all Zotero groups accessible to the current user. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_group_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
+        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        json_result(z.list_groups().await)
     }
 
     /// Get the full text content of a scholarly work by downloading and extracting its PDF.
