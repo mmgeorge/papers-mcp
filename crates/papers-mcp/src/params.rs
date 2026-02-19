@@ -755,7 +755,7 @@ pub struct ZoteroWorkListToolParams {
 /// Parameters for work/collection child-list tools (notes, attachments).
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroWorkChildrenToolParams {
-    /// Item key.
+    /// Item or collection key (e.g. `LF4MJWZK`) or a title/name search string.
     pub key: String,
     /// Results per page (1–100).
     #[serde(default, deserialize_with = "lax_optional_u32")]
@@ -768,7 +768,7 @@ pub struct ZoteroWorkChildrenToolParams {
 /// Parameters for the `zotero_work_tags` tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroWorkTagsToolParams {
-    /// Work key.
+    /// Item key (e.g. `LF4MJWZK`) or a title/creator search string.
     pub key: String,
     /// Filter tags by name.
     pub search: Option<String>,
@@ -843,7 +843,7 @@ pub struct ZoteroCollectionListToolParams {
 /// Parameters for the `zotero_collection_works` tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroCollectionWorksToolParams {
-    /// Collection key.
+    /// Collection key (e.g. `AB12CDEF`) or a name search string.
     pub key: String,
     /// Text search (title, creator, year).
     pub search: Option<String>,
@@ -868,7 +868,7 @@ pub struct ZoteroCollectionWorksToolParams {
 /// Parameters for the `zotero_collection_notes` tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroCollectionNotesToolParams {
-    /// Collection key.
+    /// Collection key (e.g. `AB12CDEF`) or a name search string.
     pub key: String,
     /// Text search within note content.
     pub search: Option<String>,
@@ -883,7 +883,7 @@ pub struct ZoteroCollectionNotesToolParams {
 /// Parameters for the `zotero_collection_subcollections` tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroCollectionSubcollectionsToolParams {
-    /// Collection key.
+    /// Collection key (e.g. `AB12CDEF`) or a name search string.
     pub key: String,
     /// Sort field: `"title"`, `"dateAdded"`, or `"dateModified"`.
     pub sort: Option<String>,
@@ -900,7 +900,7 @@ pub struct ZoteroCollectionSubcollectionsToolParams {
 /// Parameters for the `zotero_collection_tags` tool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroCollectionTagsToolParams {
-    /// Collection key.
+    /// Collection key (e.g. `AB12CDEF`) or a name search string.
     pub key: String,
     /// Filter tags by name.
     pub search: Option<String>,
@@ -940,7 +940,10 @@ pub struct ZoteroTagListToolParams {
 /// Parameters for single-key Zotero endpoints.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroKeyToolParams {
-    /// Item, collection, or search key.
+    /// Zotero key (e.g. `LF4MJWZK`) or a title/name search string.
+    /// If the value is not an 8-character uppercase key, the library is
+    /// searched by title/creator/year (items) or name (collections) and
+    /// the first match is used.
     pub key: String,
 }
 

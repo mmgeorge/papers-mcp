@@ -16,6 +16,7 @@ use papers_core::{
     FunderListParams, GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams,
     SourceListParams, SubfieldListParams, TopicListParams, WorkListParams,
 };
+use papers_core::zotero::{resolve_collection_key, resolve_item_key, resolve_search_key};
 use papers_zotero::{CollectionListParams, Item, ItemListParams, TagListParams, ZoteroClient};
 use std::time::Duration;
 
@@ -736,6 +737,7 @@ async fn main() {
                         }
                     }
                     ZoteroWorkCommand::Get { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.get_item(&key).await {
                             Ok(item) => {
                                 if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
@@ -744,6 +746,7 @@ async fn main() {
                         }
                     }
                     ZoteroWorkCommand::Collections { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let item = zotero.get_item(&key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let col_keys = item.data.collections.clone();
                         let mut collections = Vec::new();
@@ -756,6 +759,7 @@ async fn main() {
                         if json { print_json(&collections); } else { print!("{}", format::format_zotero_collection_list_vec(&collections)); }
                     }
                     ZoteroWorkCommand::Notes { key, limit, start, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = ItemListParams { item_type: Some("note".into()), limit, start, ..Default::default() };
                         match zotero.list_item_children(&key, &params).await {
                             Ok(resp) => {
@@ -765,6 +769,7 @@ async fn main() {
                         }
                     }
                     ZoteroWorkCommand::Attachments { key, limit, start, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = ItemListParams { item_type: Some("attachment".into()), limit, start, ..Default::default() };
                         match zotero.list_item_children(&key, &params).await {
                             Ok(resp) => {
@@ -774,6 +779,7 @@ async fn main() {
                         }
                     }
                     ZoteroWorkCommand::Annotations { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
                         let attachments = zotero.list_item_children(&key, &att_params).await
                             .unwrap_or_else(|e| exit_err(&e.to_string()));
@@ -789,6 +795,7 @@ async fn main() {
                         if json { print_json(&all_annotations); } else { print!("{}", format::format_zotero_annotation_list_vec(&all_annotations)); }
                     }
                     ZoteroWorkCommand::Tags { key, search, qmode, limit, start, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = TagListParams { q: search, qmode, limit, start, ..Default::default() };
                         match zotero.list_item_tags(&key, &params).await {
                             Ok(resp) => {
@@ -810,6 +817,7 @@ async fn main() {
                         }
                     }
                     ZoteroAttachmentCommand::Get { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.get_item(&key).await {
                             Ok(item) => {
                                 if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
@@ -818,6 +826,7 @@ async fn main() {
                         }
                     }
                     ZoteroAttachmentCommand::File { key, output } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.download_item_file(&key).await {
                             Ok(bytes) => {
                                 if output == "-" {
@@ -846,6 +855,7 @@ async fn main() {
                         }
                     }
                     ZoteroAnnotationCommand::Get { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.get_item(&key).await {
                             Ok(item) => {
                                 if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
@@ -866,6 +876,7 @@ async fn main() {
                         }
                     }
                     ZoteroNoteCommand::Get { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.get_item(&key).await {
                             Ok(item) => {
                                 if json { print_json(&item); } else { print!("{}", format::format_zotero_item_get(&item)); }
@@ -891,6 +902,7 @@ async fn main() {
                         }
                     }
                     ZoteroCollectionCommand::Get { key, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.get_collection(&key).await {
                             Ok(coll) => {
                                 if json { print_json(&coll); } else { print!("{}", format::format_zotero_collection_get(&coll)); }
@@ -899,6 +911,7 @@ async fn main() {
                         }
                     }
                     ZoteroCollectionCommand::Works { key, search, qmode, tag, type_, sort, direction, limit, start, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = ItemListParams {
                             item_type: type_,
                             q: search,
@@ -918,6 +931,7 @@ async fn main() {
                         }
                     }
                     ZoteroCollectionCommand::Attachments { key, sort, direction, limit, start, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = ItemListParams { item_type: Some("attachment".into()), sort, direction, limit: Some(limit), start, ..Default::default() };
                         match zotero.list_collection_items(&key, &params).await {
                             Ok(resp) => {
@@ -927,6 +941,7 @@ async fn main() {
                         }
                     }
                     ZoteroCollectionCommand::Notes { key, search, sort, direction, limit, start, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = ItemListParams { item_type: Some("note".into()), q: search, sort, direction, limit: Some(limit), start, ..Default::default() };
                         match zotero.list_collection_items(&key, &params).await {
                             Ok(resp) => {
@@ -936,6 +951,7 @@ async fn main() {
                         }
                     }
                     ZoteroCollectionCommand::Annotations { key, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
                         let attachments = zotero.list_collection_items(&key, &att_params).await
                             .unwrap_or_else(|e| exit_err(&e.to_string()));
@@ -951,6 +967,7 @@ async fn main() {
                         if json { print_json(&all_annotations); } else { print!("{}", format::format_zotero_annotation_list_vec(&all_annotations)); }
                     }
                     ZoteroCollectionCommand::Subcollections { key, sort, direction, limit, start, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = CollectionListParams { sort, direction, limit: Some(limit), start };
                         match zotero.list_subcollections(&key, &params).await {
                             Ok(resp) => {
@@ -960,6 +977,7 @@ async fn main() {
                         }
                     }
                     ZoteroCollectionCommand::Tags { key, search, qmode, limit, start, top, json } => {
+                        let key = resolve_collection_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         let params = TagListParams { q: search, qmode, limit, start, ..Default::default() };
                         let result = if top {
                             zotero.list_collection_top_items_tags(&key, &params).await
@@ -1012,6 +1030,7 @@ async fn main() {
                         }
                     }
                     ZoteroSearchCommand::Get { key, json } => {
+                        let key = resolve_search_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
                         match zotero.get_search(&key).await {
                             Ok(search) => {
                                 if json { print_json(&search); } else { print!("{}", format::format_zotero_search_get(&search)); }

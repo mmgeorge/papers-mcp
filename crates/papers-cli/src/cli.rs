@@ -711,9 +711,9 @@ pub enum ZoteroWorkCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get a single bibliographic item by Zotero key
+    /// Get a single bibliographic item by Zotero key or title search
     Get {
-        /// Zotero item key (e.g. LF4MJWZK)
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -721,7 +721,7 @@ pub enum ZoteroWorkCommand {
     },
     /// List collections the work belongs to
     Collections {
-        /// Zotero item key
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -729,7 +729,7 @@ pub enum ZoteroWorkCommand {
     },
     /// List notes attached to a work
     Notes {
-        /// Zotero item key
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
         key: String,
         /// Results per page
         #[arg(long, short = 'n')]
@@ -743,7 +743,7 @@ pub enum ZoteroWorkCommand {
     },
     /// List attachments of a work
     Attachments {
-        /// Zotero item key
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
         key: String,
         /// Results per page
         #[arg(long, short = 'n')]
@@ -757,7 +757,7 @@ pub enum ZoteroWorkCommand {
     },
     /// List all annotations across all PDFs of a work
     Annotations {
-        /// Zotero item key
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -765,7 +765,7 @@ pub enum ZoteroWorkCommand {
     },
     /// List tags attached to a work
     Tags {
-        /// Zotero item key
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
         key: String,
         /// Filter tags by name
         #[arg(long, short = 'q')]
@@ -808,9 +808,9 @@ pub enum ZoteroAttachmentCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get a single attachment item by key
+    /// Get a single attachment item by key or title search
     Get {
-        /// Zotero attachment key
+        /// Attachment key (e.g. LF4MJWZK) or a title/filename search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -818,7 +818,7 @@ pub enum ZoteroAttachmentCommand {
     },
     /// Download the file for an attachment (only works for imported_file/imported_url)
     File {
-        /// Zotero attachment key
+        /// Attachment key (e.g. LF4MJWZK) or a title/filename search string
         key: String,
         /// Output path (use - for stdout)
         #[arg(long, short = 'o', required = true)]
@@ -840,9 +840,9 @@ pub enum ZoteroAnnotationCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get a single annotation by key
+    /// Get a single annotation by key or search string
     Get {
-        /// Zotero annotation key
+        /// Annotation key (e.g. LF4MJWZK) or a search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -867,9 +867,9 @@ pub enum ZoteroNoteCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get a single note by key (full HTML content in data.note)
+    /// Get a single note by key or search string
     Get {
-        /// Zotero note key
+        /// Note key (e.g. LF4MJWZK) or a search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -900,9 +900,9 @@ pub enum ZoteroCollectionCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get a single collection by key
+    /// Get a single collection by key or name search
     Get {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -910,7 +910,7 @@ pub enum ZoteroCollectionCommand {
     },
     /// List bibliographic works in a collection
     Works {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Quick text search
         #[arg(long, short = 's')]
@@ -942,7 +942,7 @@ pub enum ZoteroCollectionCommand {
     },
     /// List attachments in a collection
     Attachments {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Sort field
         #[arg(long)]
@@ -962,7 +962,7 @@ pub enum ZoteroCollectionCommand {
     },
     /// List notes in a collection
     Notes {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Search note content
         #[arg(long, short = 's')]
@@ -985,7 +985,7 @@ pub enum ZoteroCollectionCommand {
     },
     /// List annotations on PDFs in a collection
     Annotations {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Output raw JSON
         #[arg(long)]
@@ -993,7 +993,7 @@ pub enum ZoteroCollectionCommand {
     },
     /// List sub-collections of a collection
     Subcollections {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Sort field (title, dateAdded, dateModified)
         #[arg(long)]
@@ -1013,7 +1013,7 @@ pub enum ZoteroCollectionCommand {
     },
     /// List tags on items within a collection
     Tags {
-        /// Zotero collection key
+        /// Collection key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Filter tags by name
         #[arg(long, short = 'q')]
@@ -1086,9 +1086,9 @@ pub enum ZoteroSearchCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Get a single saved search by key
+    /// Get a single saved search by key or name search
     Get {
-        /// Zotero saved search key
+        /// Search key (e.g. AB12CDEF) or a name search string
         key: String,
         /// Output raw JSON
         #[arg(long)]

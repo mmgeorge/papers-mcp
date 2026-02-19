@@ -2068,3 +2068,116 @@ async fn test_zotero_group_list() {
     let result = server.zotero_group_list(Parameters(params)).await;
     assert!(result.is_ok());
 }
+
+// ── Zotero smart key-resolution tests ────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_work_get_by_title_resolves_key() {
+    // Non-key string → search top items, then fetch resolved key
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .and(query_param("q", "Test Paper"))
+        .and(query_param("limit", "1"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_item_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "Test Paper"})).unwrap();
+    let result = server.zotero_work_get(Parameters(params)).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().contains("ABC12345"));
+}
+
+#[tokio::test]
+async fn test_zotero_work_get_by_key_no_search() {
+    // 8-char key → goes straight to /items/ABC12345 without a search call
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_item_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_get(Parameters(params)).await;
+    assert!(result.is_ok());
+    // Verify the mock was hit exactly once (the /items/ABC12345 call) and no search was made
+    let requests = mock.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].url.path().ends_with("/ABC12345"));
+}
+
+#[tokio::test]
+async fn test_zotero_work_get_by_title_not_found() {
+    // Search returns empty → error propagated
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "0")
+                .insert_header("Last-Modified-Version", "1")
+                .set_body_string("[]"),
+        )
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params =
+        serde_json::from_value(serde_json::json!({"key": "Nonexistent Paper Title"})).unwrap();
+    let result = server.zotero_work_get(Parameters(params)).await;
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .contains("Nonexistent Paper Title"));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_get_by_name_resolves_key() {
+    // Non-key string → list collections (limit=100), match by name, then fetch
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections"))
+        .and(query_param("limit", "100"))
+        .respond_with(zotero_array_response(&zotero_collections_body()))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_collection_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params =
+        serde_json::from_value(serde_json::json!({"key": "Test Collection"})).unwrap();
+    let result = server.zotero_collection_get(Parameters(params)).await;
+    assert!(result.is_ok());
+    assert!(result.unwrap().contains("COL12345"));
+}
+
+#[tokio::test]
+async fn test_zotero_collection_works_by_name_resolves_key() {
+    // Name resolution also applies to collection sub-commands
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections"))
+        .and(query_param("limit", "100"))
+        .respond_with(zotero_array_response(&zotero_collections_body()))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/collections/COL12345/items/top"))
+        .respond_with(zotero_array_response(&zotero_items_body()))
+        .mount(&mock)
+        .await;
+    let server = make_zotero_server(&mock);
+    let params =
+        serde_json::from_value(serde_json::json!({"key": "Test Collection"})).unwrap();
+    let result = server.zotero_collection_works(Parameters(params)).await;
+    assert!(result.is_ok());
+}
