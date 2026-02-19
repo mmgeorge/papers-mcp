@@ -1,7 +1,16 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:*)",
+      "WebFetch",
+      "WebFetch(domain:www.zotero.org)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:www.semanticscholar.org)",
+      "WebFetch(domain:api.semanticscholar.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:docs.openalex.org)",
+      "WebFetch(domain:lib.rs)",
       "WebSearch",
       "Bash(cargo:*)",
       "Bash(ls:*)",
@@ -17,7 +26,11 @@
       "mcp__papers-mcp__list_institutions",
       "mcp__papers-mcp__work_list",
       "mcp__papers-mcp__topic_list",
-      "mcp__papers-mcp__work_get"
+      "mcp__papers-mcp__work_get",
+      "Bash(powershell:*)",
+      "Bash(grep:*)",
+      "Bash(where:*)",
+      "Bash(target/debug/papers.exe:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
