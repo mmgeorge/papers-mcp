@@ -21,4 +21,5 @@ organizing, and citing research papers.
 | [`papers-mcp`](crates/papers-mcp/) | MCP server. |
 | [`papers-openalex`](crates/papers-openalex/) | Typed client for the OpenAlex REST API. |
 | [`papers-zotero`](crates/papers-zotero/) | Typed client for the Zotero Web API v3. |
+| [`papers-datalab`](crates/papers-datalab/) | Client for the Datalab document processing API. |
 
