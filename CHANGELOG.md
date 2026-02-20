@@ -1,3 +1,36 @@
+## [0.2.0] - 2026-02-20
+
+### Features
+
+- Add papers-zotero crate for Zotero Web API integration
+- Add full-text PDF extraction tool
+- Implement interactive pdf retrieval and zotero polling
+- Integrate DataLab Marker API for PDF extraction
+- Add zotero api
+- Allow zotero key resolution by title or name
+- Simplify zotero search and tag filtering
+- Improved zotero integration. check for running
+
+### Other
+
+- Remove autoupdate
+
+### Refactor
+
+- Replace pdfium-render with pdf-extract
+
+### Documentation
+
+- Add crates.io badges to readmes
+- Update and clean up readme files
+- Add README for papers-zotero crate
+- Add mit license badge and reorder badges in readme
+
+### Miscellaneous Tasks
+
+- Remove windows arm target
+- Update claude settings permissions
+- Update allowed permissions in claude settings
 ## [0.1.4] - 2026-02-17
 
 ### Other
@@ -12,6 +45,7 @@
 - Release v0.1.3
 - Fix git-cliff workdir in release hook
 - Update cliff
+- Release v0.1.4
 ## [papers-openalex-v0.1.2] - 2026-02-17
 
 ### Miscellaneous Tasks

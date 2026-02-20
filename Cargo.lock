@@ -1284,7 +1284,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "papers-cli"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "clap",
  "papers-core",
@@ -1298,7 +1298,7 @@ dependencies = [
 
 [[package]]
 name = "papers-core"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "papers-datalab",
@@ -1315,7 +1315,7 @@ dependencies = [
 
 [[package]]
 name = "papers-datalab"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "reqwest",
  "serde",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "papers-mcp"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "papers-core",
  "papers-datalab",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "papers-openalex"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "bon",
  "dirs",
@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "papers-zotero"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "bon",
  "dirs",
