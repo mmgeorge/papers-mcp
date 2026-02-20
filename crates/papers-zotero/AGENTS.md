@@ -53,6 +53,30 @@ curl -s -H "Zotero-API-Version: 3" -H "Zotero-API-Key: $KEY" \
 - Add wiremock tests in `src/client.rs`
 - Add live integration tests in `tests/integration.rs`
 
+## Error Types
+
+`ZoteroError` (in `src/error.rs`) has four variants:
+- `Http` — network/connection failure (wraps `reqwest::Error`)
+- `Json` — deserialization failure (wraps `serde_json::Error`)
+- `Api { status, message }` — non-success HTTP status from the server
+- `NotRunning { path: String }` — Zotero is installed on disk but its local API is unreachable. Only returned by `from_env_prefer_local`. The `path` field is the filesystem path where the Zotero executable was found.
+
+## Install Detection
+
+`find_zotero_exe()` (private, in `client.rs`) checks platform-specific install paths:
+- **Windows**: `%PROGRAMFILES%\Zotero\zotero.exe` and `%LOCALAPPDATA%\Zotero\zotero.exe`
+- **macOS**: `/Applications/Zotero.app/Contents/MacOS/zotero`
+- **Linux**: `$HOME/Zotero/zotero`, `/opt/Zotero/zotero`, `/usr/lib/zotero/zotero`, `/usr/bin/zotero`
+
+Returns `None` if none of the candidates exist on disk.
+
+## `ZOTERO_CHECK_LAUNCHED` Environment Variable
+
+When `from_env_prefer_local` fails to reach the local API, it calls `find_zotero_exe()`.
+If an executable is found, it returns `Err(ZoteroError::NotRunning { path })` — an actionable error telling the user to start Zotero.
+
+Set `ZOTERO_CHECK_LAUNCHED=0` to disable this check and fall back silently to the remote web API (useful for CI or non-interactive contexts where Zotero is not expected to be running).
+
 ## Key Gotchas
 
 - **Raw arrays:** Zotero returns `[...]` not `{results: [...]}`. List endpoints parse the body as a `Vec<T>`

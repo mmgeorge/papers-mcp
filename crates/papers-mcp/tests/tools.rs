@@ -53,9 +53,9 @@ fn minimal_find_json() -> String {
     .to_string()
 }
 
-fn make_server(mock_server: &MockServer) -> PapersMcp {
+async fn make_server(mock_server: &MockServer) -> PapersMcp {
     let client = OpenAlexClient::new().with_base_url(mock_server.uri());
-    PapersMcp::with_client(client)
+    PapersMcp::with_client(client).await
 }
 
 fn make_zotero_server(mock_server: &MockServer) -> PapersMcp {
@@ -189,7 +189,7 @@ async fn test_list_works_tool() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     let text = result.unwrap();
@@ -207,7 +207,7 @@ async fn test_list_works_with_params() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({
         "search": "machine learning",
         "per_page": 5
@@ -228,7 +228,7 @@ async fn test_get_work_tool() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"id": "W2741809807"})).unwrap();
     let result = server.work_get(Parameters(params)).await;
     let text = result.unwrap();
@@ -245,7 +245,7 @@ async fn test_get_work_with_select() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params =
         serde_json::from_value(serde_json::json!({"id": "W123", "select": "id,display_name"}))
             .unwrap();
@@ -265,7 +265,7 @@ async fn test_autocomplete_works_tool() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"q": "machine"})).unwrap();
     let result = server.work_autocomplete(Parameters(params)).await;
     let text = result.unwrap();
@@ -284,7 +284,7 @@ async fn test_find_works_get() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"query": "drug discovery"})).unwrap();
     let result = server.work_find(Parameters(params)).await;
     assert!(result.is_ok());
@@ -300,7 +300,7 @@ async fn test_find_works_post_for_long_query() {
         .await;
 
     let long_query = "a ".repeat(1500); // >2048 chars
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"query": long_query})).unwrap();
     let result = server.work_find(Parameters(params)).await;
     assert!(result.is_ok());
@@ -317,7 +317,7 @@ async fn test_api_error_returns_error_result() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"id": "invalid"})).unwrap();
     let result = server.work_get(Parameters(params)).await;
 
@@ -325,6 +325,76 @@ async fn test_api_error_returns_error_result() {
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(err.contains("404"));
+}
+
+fn work_candidates_list_json(candidates: &[(&str, &str, u64)]) -> String {
+    let items: Vec<String> = candidates
+        .iter()
+        .map(|(id, name, cites)| {
+            format!(r#"{{"id": "{id}", "display_name": "{name}", "cited_by_count": {cites}}}"#)
+        })
+        .collect();
+    format!(
+        r#"{{"meta": {{"count": {}, "db_response_time_ms": 5, "page": 1, "per_page": 200, "next_cursor": null, "groups_count": null}}, "results": [{}], "group_by": []}}"#,
+        candidates.len(),
+        items.join(", ")
+    )
+}
+
+#[tokio::test]
+async fn test_work_get_exact_title_match_returns_ok() {
+    let mock = MockServer::start().await;
+    // Search returns multiple candidates; the second is an exact match
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_candidates_list_json(&[
+            ("https://openalex.org/W1", "Intro to Neural Networks", 200),
+            ("https://openalex.org/W2741809807", "Neural Networks", 500),
+        ])))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works/W2741809807"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(minimal_work_json()))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock).await;
+    let params = serde_json::from_value(serde_json::json!({"id": "Neural Networks"})).unwrap();
+    let result = server.work_get(Parameters(params)).await;
+    assert!(result.is_ok());
+    let text = result.unwrap();
+    assert!(text.contains("The state of OA")); // from minimal_work_json
+    assert!(!text.contains("candidates"));     // not a suggestions response
+}
+
+#[tokio::test]
+async fn test_work_get_suggestions_returns_ok_with_json_body() {
+    let mock = MockServer::start().await;
+    // No exact match among candidates → suggestions JSON returned as Ok
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_candidates_list_json(&[
+            ("https://openalex.org/W1", "GPU rasterization for real-time aggregation", 42),
+            ("https://openalex.org/W2", "High-performance GPU rasterization", 17),
+        ])))
+        .mount(&mock)
+        .await;
+
+    let server = make_server(&mock).await;
+    let params = serde_json::from_value(serde_json::json!({"id": "GPU rasterization"})).unwrap();
+    let result = server.work_get(Parameters(params)).await;
+
+    // Suggestions come back as Ok(JSON) not Err
+    assert!(result.is_ok());
+    let text = result.unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(json["message"], "no_exact_match");
+    assert_eq!(json["query"], "GPU rasterization");
+    let candidates = json["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.contains(&serde_json::json!({"name": "GPU rasterization for real-time aggregation", "citations": 42})));
+    assert!(candidates.contains(&serde_json::json!({"name": "High-performance GPU rasterization", "citations": 17})));
 }
 
 // ── Tool listing tests ───────────────────────────────────────────────
@@ -962,7 +1032,7 @@ async fn test_list_works_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.work_list(Parameters(params)).await.unwrap();
 
@@ -991,7 +1061,7 @@ async fn test_list_authors_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.author_list(Parameters(params)).await.unwrap();
 
@@ -1011,7 +1081,7 @@ async fn test_list_sources_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.source_list(Parameters(params)).await.unwrap();
 
@@ -1031,7 +1101,7 @@ async fn test_list_institutions_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.institution_list(Parameters(params)).await.unwrap();
 
@@ -1051,7 +1121,7 @@ async fn test_list_topics_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.topic_list(Parameters(params)).await.unwrap();
 
@@ -1071,7 +1141,7 @@ async fn test_list_publishers_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.publisher_list(Parameters(params)).await.unwrap();
 
@@ -1091,7 +1161,7 @@ async fn test_list_funders_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.funder_list(Parameters(params)).await.unwrap();
 
@@ -1167,7 +1237,7 @@ async fn test_list_domains_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.domain_list(Parameters(params)).await.unwrap();
 
@@ -1187,7 +1257,7 @@ async fn test_list_fields_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.field_list(Parameters(params)).await.unwrap();
 
@@ -1207,7 +1277,7 @@ async fn test_list_subfields_returns_slim_response() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({})).unwrap();
     let text = server.subfield_list(Parameters(params)).await.unwrap();
 
@@ -1261,7 +1331,7 @@ async fn test_work_list_with_year_alias() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"year": ">2020"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1277,7 +1347,7 @@ async fn test_work_list_with_citations_alias() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"citations": ">100"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1293,7 +1363,7 @@ async fn test_work_list_with_author_id() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params =
         serde_json::from_value(serde_json::json!({"author": "A5083138872"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
@@ -1321,7 +1391,7 @@ async fn test_work_list_with_author_search() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"author": "einstein"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1349,7 +1419,7 @@ async fn test_work_list_with_publisher_search() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"publisher": "acm"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1377,7 +1447,7 @@ async fn test_work_list_with_source_search() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"source": "siggraph"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1393,7 +1463,7 @@ async fn test_work_list_with_topic_id() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"topic": "T11636"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1409,7 +1479,7 @@ async fn test_work_list_with_domain_id() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"domain": "3"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1425,7 +1495,7 @@ async fn test_work_list_with_field_id() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"field": "17"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1444,7 +1514,7 @@ async fn test_work_list_with_subfield_id() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params =
         serde_json::from_value(serde_json::json!({"subfield": "subfields/1702"})).unwrap();
     let result = server.work_list(Parameters(params)).await;
@@ -1464,7 +1534,7 @@ async fn test_work_list_combined_aliases_and_filter() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({
         "year": "2024",
         "citations": ">100",
@@ -1479,7 +1549,7 @@ async fn test_work_list_combined_aliases_and_filter() {
 async fn test_work_list_overlap_error() {
     let mock = MockServer::start().await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({
         "year": "2024",
         "filter": "publication_year:>2020"
@@ -1680,7 +1750,7 @@ async fn test_author_list_with_institution_search() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"institution": "mit"})).unwrap();
     let result = server.author_list(Parameters(params)).await;
     assert!(result.is_ok());
@@ -1696,7 +1766,7 @@ async fn test_source_list_with_open_flag() {
         .mount(&mock)
         .await;
 
-    let server = make_server(&mock);
+    let server = make_server(&mock).await;
     let params = serde_json::from_value(serde_json::json!({"open": true})).unwrap();
     let result = server.source_list(Parameters(params)).await;
     assert!(result.is_ok());

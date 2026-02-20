@@ -105,6 +105,18 @@ Do not call the API if the key is missing.
 3. Wire into the `EntityCommand::Zotero { cmd }` arm in `main.rs`, calling `ZoteroClient` directly
 4. Add tests in `tests/cli.rs` — Zotero commands call client methods directly (not `papers::api::*`)
 
+## Zotero client initialization
+
+Two helpers in `main.rs`:
+
+- **`zotero_client()`** — required Zotero client; used by the `papers zotero *` subcommands. Returns `Err` on any failure (not configured, not running, etc.). The Zotero arm calls it and exits early on error.
+
+- **`optional_zotero()`** — optional Zotero enrichment; used by `work get` and `work text` where Zotero provides extra context but is not strictly required.
+  - Returns `Ok(Some(client))` when Zotero is configured and reachable
+  - Returns `Ok(None)` when Zotero env vars are absent (silently omit Zotero info)
+  - Returns `Err(NotRunning)` when Zotero is installed on disk but not running → caller calls `exit_err()` to surface the actionable message
+  - Set `ZOTERO_CHECK_LAUNCHED=0` to make `optional_zotero()` return `Ok(None)` instead of `Err` when Zotero is installed but not running
+
 ## Key notes
 
 - `format.rs` formatters take references to response types from `papers::*` or `papers_zotero::*`

@@ -25,6 +25,14 @@ pub enum ZoteroError {
     /// contains the response body text.
     #[error("API error (status {status}): {message}")]
     Api { status: u16, message: String },
+
+    /// Zotero is installed on this machine but its local API is not reachable.
+    /// Set ZOTERO_CHECK_LAUNCHED=0 to disable this check.
+    #[error(
+        "Zotero is installed but not running (found at {path}).\n\
+         Start Zotero and try again, or set ZOTERO_CHECK_LAUNCHED=0 to use the remote API instead."
+    )]
+    NotRunning { path: String },
 }
 
 /// A [`Result`](std::result::Result) alias with [`ZoteroError`] as the error

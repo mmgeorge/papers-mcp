@@ -3,6 +3,8 @@ use papers_openalex::{
     GetParams, Institution, OpenAlexClient, OpenAlexError, Publisher, Source, Subfield,
     Topic, Work,
 };
+use papers_zotero::ZoteroClient;
+use serde::Serialize;
 
 use crate::filter::{
     AuthorListParams, DomainListParams, FieldListParams, FilterError, FunderListParams,
@@ -170,6 +172,41 @@ entity_get_fn!(funder_get, Funder, get_funder, "funders");
 entity_get_fn!(domain_get, Domain, get_domain, "domains");
 entity_get_fn!(field_get, Field, get_field, "fields");
 entity_get_fn!(subfield_get, Subfield, get_subfield, "subfields");
+
+/// Combined work response including optional Zotero library metadata.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkGetResponse {
+    pub work: Work,
+    pub in_zotero: bool,
+    pub zotero: Option<crate::text::ZoteroItemInfo>,
+}
+
+/// Get a work by ID and check if it's in the Zotero library (if Zotero is configured).
+pub async fn work_get_response(
+    client: &OpenAlexClient,
+    zotero: Option<&ZoteroClient>,
+    id: &str,
+    params: &GetParams,
+) -> Result<WorkGetResponse, FilterError> {
+    let t0 = std::time::Instant::now();
+    let work = work_get(client, id, params).await?;
+    eprintln!("[timing] openalex work_get: {:?}", t0.elapsed());
+
+    let zotero_info = if let Some(z) = zotero {
+        let t1 = std::time::Instant::now();
+        let info = crate::text::find_work_in_zotero(z, &work).await.unwrap_or(None);
+        eprintln!("[timing] zotero find_work: {:?}", t1.elapsed());
+        info
+    } else {
+        None
+    };
+    eprintln!("[timing] total: {:?}", t0.elapsed());
+    Ok(WorkGetResponse {
+        in_zotero: zotero_info.is_some(),
+        work,
+        zotero: zotero_info,
+    })
+}
 
 // ── Autocomplete ─────────────────────────────────────────────────────────
 

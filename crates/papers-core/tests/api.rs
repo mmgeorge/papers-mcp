@@ -5,7 +5,7 @@ use papers_core::{
     GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams, SourceListParams,
     SubfieldListParams, TopicListParams, WorkListParams,
 };
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_client(mock: &MockServer) -> OpenAlexClient {
@@ -798,6 +798,165 @@ async fn test_work_get_not_found_error() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("nonexistent paper title xyz"));
+}
+
+/// Build a list response body with multiple results (id, display_name, cited_by_count).
+fn multi_result_list_response(results: &[(&str, &str, u64)]) -> String {
+    let items: Vec<String> = results
+        .iter()
+        .map(|(id, name, cites)| {
+            format!(r#"{{"id": "{id}", "display_name": "{name}", "cited_by_count": {cites}}}"#)
+        })
+        .collect();
+    format!(
+        r#"{{"meta": {{"count": {}, "db_response_time_ms": 5, "page": 1, "per_page": 200, "next_cursor": null, "groups_count": null}}, "results": [{}], "group_by": []}}"#,
+        results.len(),
+        items.join(", ")
+    )
+}
+
+#[tokio::test]
+async fn test_work_get_picks_exact_title_match_from_candidates() {
+    let mock = MockServer::start().await;
+    // Return multiple candidates — only the second has an exact match
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(multi_result_list_response(&[
+            ("https://openalex.org/W1", "A Survey of Neural Networks", 500),
+            ("https://openalex.org/W2", "Neural Networks", 1200),
+            ("https://openalex.org/W3", "Introduction to Neural Networks", 300),
+        ])))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works/W2"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let work = api::work_get(&client, "Neural Networks", &GetParams::default()).await.unwrap();
+    // Should pick W2 (exact match), not W1 (first result)
+    assert_eq!(work.display_name, Some("A Great Paper".to_string())); // from work_json()
+}
+
+#[tokio::test]
+async fn test_work_get_exact_match_is_case_insensitive() {
+    let mock = MockServer::start().await;
+    // Title in OpenAlex has different capitalisation
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(multi_result_list_response(&[
+            ("https://openalex.org/W1", "Attention Is All You Need", 90000),
+        ])))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works/W1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    // Query uses different casing — should still match
+    let result = api::work_get(&client, "attention is all you need", &GetParams::default()).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_get_returns_suggestions_when_no_exact_match() {
+    let mock = MockServer::start().await;
+    // Return candidates but none match the query exactly
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(multi_result_list_response(&[
+            ("https://openalex.org/W1", "GPU rasterization for real-time aggregation", 42),
+            ("https://openalex.org/W2", "High-performance GPU rasterization techniques", 17),
+        ])))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let result = api::work_get(&client, "GPU rasterization", &GetParams::default()).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match err {
+        papers_core::FilterError::Suggestions { query, suggestions } => {
+            assert_eq!(query, "GPU rasterization");
+            assert_eq!(suggestions.len(), 2);
+            assert!(suggestions.contains(&("GPU rasterization for real-time aggregation".to_string(), 42)));
+            assert!(suggestions.contains(&("High-performance GPU rasterization techniques".to_string(), 17)));
+        }
+        other => panic!("expected FilterError::Suggestions, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_work_get_suggestions_error_message_format() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(multi_result_list_response(&[
+            ("https://openalex.org/W1", "GPU rasterization for real-time aggregation", 42),
+            ("https://openalex.org/W2", "High-performance GPU rasterization", 17),
+        ])))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let err = api::work_get(&client, "GPU rasterization", &GetParams::default())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("Did you mean:"));
+    assert!(err.contains("GPU rasterization for real-time aggregation"));
+    assert!(err.contains("42 citations"));
+}
+
+#[tokio::test]
+async fn test_work_get_uses_title_search_filter() {
+    let mock = MockServer::start().await;
+    // Verify the request uses title.search filter (not display_name.search)
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .and(query_param("filter", "title.search:My Paper Title"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(multi_result_list_response(&[
+            ("https://openalex.org/W1", "My Paper Title", 99),
+        ])))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works/W1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    let result = api::work_get(&client, "My Paper Title", &GetParams::default()).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_work_get_single_candidate_auto_selected() {
+    let mock = MockServer::start().await;
+    // Only one result — no exact match but should be auto-selected
+    Mock::given(method("GET"))
+        .and(path("/works"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(multi_result_list_response(&[
+            ("https://openalex.org/W1", "XZ Ordering: A Space-Filling Curve for Ranked Range Queries", 12),
+        ])))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/works/W1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(work_json()))
+        .mount(&mock)
+        .await;
+
+    let client = make_client(&mock);
+    // Query is a prefix — not an exact match — but only one candidate exists
+    let result = api::work_get(&client, "XZ Ordering: A Space", &GetParams::default()).await;
+    assert!(result.is_ok());
 }
 
 // ── work_text tests ──────────────────────────────────────────────────────

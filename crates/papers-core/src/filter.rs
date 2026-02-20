@@ -34,8 +34,22 @@ pub enum FilterError {
         entity_type: &'static str,
         query: String,
     },
+    #[error("Did you mean:\n{}", format_suggestions(.suggestions))]
+    Suggestions {
+        query: String,
+        /// Each entry is (display_name, cited_by_count).
+        suggestions: Vec<(String, u64)>,
+    },
     #[error(transparent)]
     Api(#[from] OpenAlexError),
+}
+
+fn format_suggestions(suggestions: &[(String, u64)]) -> String {
+    suggestions
+        .iter()
+        .map(|(name, citations)| format!("  - {name} ({citations} citations)"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ── Alias constant arrays ────────────────────────────────────────────────
@@ -494,7 +508,8 @@ pub(crate) fn normalize_id(raw_id: &str, entity_type: &str) -> String {
 
 /// Resolve a search string to an entity ID by querying the list endpoint.
 ///
-/// For works: `GET /works?filter=title.search:{query}&sort=relevance_score:desc&per_page=1&select=id`
+/// For works: fetches up to 25 candidates via `title.search`, then picks the first whose
+/// `display_name` exactly matches the query (case-insensitive), falling back to the first result.
 /// For publishers: `GET /publishers?search={query}&sort=cited_by_count:desc&per_page=1&select=id`
 /// For all other entities: `GET /{entity_type}?filter=display_name.search:{query}&sort=cited_by_count:desc&per_page=1&select=id`
 pub(crate) async fn resolve_entity_id(
@@ -512,13 +527,11 @@ pub(crate) async fn resolve_entity_id(
             ..Default::default()
         }
     } else if entity_type == "works" {
-        // Works: sort by relevance so the best title match wins rather than
-        // the most-cited work that happens to contain the query keywords
+        // Fetch up to 200 candidates (OpenAlex max) so we can post-filter for an exact title match
         ListParams {
             filter: Some(format!("title.search:{query}")),
-            sort: Some("relevance_score:desc".to_string()),
-            per_page: Some(1),
-            select: Some("id,display_name".to_string()),
+            per_page: Some(200),
+            select: Some("id,display_name,cited_by_count".to_string()),
             ..Default::default()
         }
     } else {
@@ -546,10 +559,42 @@ pub(crate) async fn resolve_entity_id(
         _ => unreachable!("unknown entity type: {entity_type}"),
     };
 
-    let first = result.results.into_iter().next().ok_or_else(|| FilterError::NotFound {
-        entity_type,
-        query: query.to_string(),
-    })?;
+    // For works, require an exact title match (case-insensitive); if none found,
+    // return the candidate titles so the caller can prompt the user
+    let mut results = result.results.into_iter();
+    let query_lower = query.to_lowercase();
+    let first = if entity_type == "works" {
+        let candidates: Vec<_> = results.collect();
+        if candidates.is_empty() {
+            return Err(FilterError::NotFound { entity_type, query: query.to_string() });
+        }
+        candidates
+            .iter()
+            .find(|v| {
+                v["display_name"]
+                    .as_str()
+                    .map(|n| n.to_lowercase() == query_lower)
+                    .unwrap_or(false)
+            })
+            .or_else(|| if candidates.len() == 1 { candidates.first() } else { None })
+            .cloned()
+            .ok_or_else(|| FilterError::Suggestions {
+                query: query.to_string(),
+                suggestions: candidates
+                    .iter()
+                    .filter_map(|v| {
+                        let name = v["display_name"].as_str()?.to_string();
+                        let citations = v["cited_by_count"].as_u64().unwrap_or(0);
+                        Some((name, citations))
+                    })
+                    .collect(),
+            })?
+    } else {
+        results.next().ok_or_else(|| FilterError::NotFound {
+            entity_type,
+            query: query.to_string(),
+        })?
+    };
 
     let id = first["id"]
         .as_str()

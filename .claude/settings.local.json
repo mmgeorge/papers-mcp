@@ -30,7 +30,8 @@
       "Bash(powershell:*)",
       "Bash(grep:*)",
       "Bash(where:*)",
-      "Bash(target/debug/papers.exe:*)"
+      "Bash(target/debug/papers.exe:*)",
+      "Bash(findstr:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

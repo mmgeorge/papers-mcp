@@ -7,6 +7,41 @@ use serde::de::DeserializeOwned;
 
 const DEFAULT_BASE_URL: &str = "https://api.zotero.org";
 
+/// Returns the path to the Zotero executable if it is found on disk, or
+/// `None` if Zotero does not appear to be installed.
+fn find_zotero_exe() -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(pf) = std::env::var("PROGRAMFILES") {
+            candidates.push(format!(r"{pf}\Zotero\zotero.exe"));
+        } else {
+            candidates.push(r"C:\Program Files\Zotero\zotero.exe".into());
+        }
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            candidates.push(format!(r"{local}\Zotero\zotero.exe"));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        candidates.push("/Applications/Zotero.app/Contents/MacOS/zotero".into());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{home}/Zotero/zotero"));
+        }
+        candidates.push("/opt/Zotero/zotero".into());
+        candidates.push("/usr/lib/zotero/zotero".into());
+        candidates.push("/usr/bin/zotero".into());
+    }
+
+    candidates.into_iter().find(|p| std::path::Path::new(p).exists())
+}
+
 /// Async client for the [Zotero Web API v3](https://www.zotero.org/support/dev/web_api/v3/start).
 ///
 /// Provides 25+ methods covering all read endpoints for items, collections,
@@ -77,6 +112,57 @@ impl ZoteroClient {
             message: "ZOTERO_API_KEY environment variable not set".into(),
         })?;
         Ok(Self::new(user_id, api_key))
+    }
+
+    /// Create a client from environment variables, preferring the local Zotero
+    /// API (`http://localhost:23119`) if it is running and has the local API
+    /// enabled. Falls back to the web API with disk cache when unavailable.
+    ///
+    /// Use this instead of `from_env()` for interactive tools where low latency
+    /// matters. The local API requires "Enable Local API" to be turned on in
+    /// Zotero → Settings → Advanced.
+    pub async fn from_env_prefer_local() -> Result<Self> {
+        let user_id = std::env::var("ZOTERO_USER_ID").map_err(|_| ZoteroError::Api {
+            status: 0,
+            message: "ZOTERO_USER_ID environment variable not set".into(),
+        })?;
+        let api_key = std::env::var("ZOTERO_API_KEY").map_err(|_| ZoteroError::Api {
+            status: 0,
+            message: "ZOTERO_API_KEY environment variable not set".into(),
+        })?;
+
+        const LOCAL_BASE: &str = "http://127.0.0.1:23119/api";
+        let probe_url = format!("{LOCAL_BASE}/users/{user_id}/items?limit=0");
+        let local_ok = reqwest::Client::new()
+            .get(&probe_url)
+            .timeout(std::time::Duration::from_millis(500))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+
+        if local_ok {
+            // Local API is up — no cache needed, it's all in-process on this machine.
+            Ok(Self::new(user_id, api_key).with_base_url(LOCAL_BASE))
+        } else {
+            // If Zotero is installed but not running, surface an actionable error
+            // rather than silently falling back to the slower remote API.
+            // Set ZOTERO_CHECK_LAUNCHED=0 to opt out of this check.
+            let skip_check = std::env::var("ZOTERO_CHECK_LAUNCHED")
+                .map(|v| v == "0")
+                .unwrap_or(false);
+            if !skip_check {
+                if let Some(path) = find_zotero_exe() {
+                    return Err(ZoteroError::NotRunning { path });
+                }
+            }
+            // Zotero not found on disk — fall back to web API with disk cache.
+            let mut client = Self::new(user_id, api_key);
+            if let Ok(cache) = DiskCache::default_location(std::time::Duration::from_secs(60)) {
+                client = client.with_cache(cache);
+            }
+            Ok(client)
+        }
     }
 
     /// Override the base URL. Useful for testing with a mock server.

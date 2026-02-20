@@ -12,6 +12,7 @@ use cli::{
     ZoteroSearchCommand, ZoteroTagCommand, ZoteroWorkCommand,
 };
 use papers_core::{
+    filter::FilterError,
     AuthorListParams, DiskCache, DomainListParams, FieldListParams, FindWorksParams,
     FunderListParams, GetParams, InstitutionListParams, OpenAlexClient, PublisherListParams,
     SourceListParams, SubfieldListParams, TopicListParams, WorkListParams,
@@ -19,6 +20,21 @@ use papers_core::{
 use papers_core::zotero::{resolve_collection_key, resolve_item_key, resolve_search_key};
 use papers_zotero::{CollectionListParams, Item, ItemListParams, TagListParams, ZoteroClient};
 use std::time::Duration;
+
+async fn zotero_client() -> Result<ZoteroClient, papers_zotero::ZoteroError> {
+    ZoteroClient::from_env_prefer_local().await
+}
+
+/// Returns the Zotero client when available, `Ok(None)` when Zotero is simply
+/// not configured (env vars absent), or `Err` when Zotero is installed but not
+/// running (so the caller can surface the error).
+async fn optional_zotero() -> Result<Option<ZoteroClient>, papers_zotero::ZoteroError> {
+    match ZoteroClient::from_env_prefer_local().await {
+        Ok(z) => Ok(Some(z)),
+        Err(e @ papers_zotero::ZoteroError::NotRunning { .. }) => Err(e),
+        Err(_) => Ok(None),
+    }
+}
 
 fn work_list_params(args: &cli::ListArgs, wf: &WorkFilterArgs) -> WorkListParams {
     WorkListParams {
@@ -262,13 +278,27 @@ async fn main() {
                 }
             }
             WorkCommand::Get { id, json } => {
-                match papers_core::api::work_get(&client, &id, &GetParams::default()).await {
-                    Ok(work) => {
+                let zotero = optional_zotero().await.unwrap_or_else(|e| exit_err(&e.to_string()));
+                let zotero_configured = zotero.is_some();
+                match papers_core::api::work_get_response(&client, zotero.as_ref(), &id, &GetParams::default()).await {
+                    Ok(response) => {
                         if json {
-                            print_json(&work);
+                            print_json(&response);
                         } else {
-                            print!("{}", format::format_work_get(&work));
+                            print!("{}", format::format_work_get_response(&response, zotero_configured));
                         }
+                    }
+                    Err(FilterError::Suggestions { query, suggestions }) if json => {
+                        let candidates: Vec<_> = suggestions
+                            .into_iter()
+                            .map(|(name, citations)| serde_json::json!({"name": name, "citations": citations}))
+                            .collect();
+                        print_json(&serde_json::json!({
+                            "message": "no_exact_match",
+                            "query": query,
+                            "candidates": candidates,
+                        }));
+                        std::process::exit(1);
                     }
                     Err(e) => exit_err(&e.to_string()),
                 }
@@ -311,7 +341,7 @@ async fn main() {
                 }
             }
             WorkCommand::Text { id, json, no_prompt, advanced } => {
-                let zotero = ZoteroClient::from_env().ok();
+                let zotero = optional_zotero().await.unwrap_or_else(|e| exit_err(&e.to_string()));
                 let dl_client = if advanced.is_some() {
                     papers_datalab::DatalabClient::from_env().ok()
                 } else {
@@ -709,7 +739,7 @@ async fn main() {
         },
 
         EntityCommand::Zotero { cmd } => {
-            let zotero = ZoteroClient::from_env().unwrap_or_else(|_| {
+            let zotero = zotero_client().await.unwrap_or_else(|_| {
                 exit_err("Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.")
             });
             match cmd {

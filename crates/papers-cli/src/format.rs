@@ -1,3 +1,4 @@
+use papers_core::api::WorkGetResponse;
 use papers_core::summary::{
     AuthorSummary, DomainSummary, FieldSummary, FunderSummary, InstitutionSummary,
     PublisherSummary, SlimListResponse, SourceSummary, SubfieldSummary, TopicSummary, WorkSummary,
@@ -154,6 +155,29 @@ pub fn format_work_get(w: &Work) -> String {
         out.push_str(&format!("\nAbstract:\n  {abs}\n"));
     }
 
+    out
+}
+
+pub fn format_work_get_response(response: &WorkGetResponse, zotero_configured: bool) -> String {
+    let mut out = format_work_get(&response.work);
+    if zotero_configured {
+        out.push('\n');
+        if let Some(z) = &response.zotero {
+            out.push_str("Zotero:\n");
+            out.push_str(&format!("  Key:   {}\n", z.key));
+            out.push_str(&format!("  Open:  {}\n", z.uri));
+            out.push_str(&format!("  Type:  {}\n", z.item_type));
+            out.push_str(&format!("  PDF:   {}\n", if z.has_pdf { "Yes" } else { "No" }));
+            if !z.tags.is_empty() {
+                out.push_str(&format!("  Tags:  {}\n", z.tags.join(", ")));
+            }
+            if let Some(date) = &z.date_added {
+                out.push_str(&format!("  Added: {}\n", &date[..10.min(date.len())]));
+            }
+        } else {
+            out.push_str("Zotero: not in library\n");
+        }
+    }
     out
 }
 
@@ -808,6 +832,7 @@ pub fn format_zotero_item_get(item: &Item) -> String {
     let title = item.data.title.as_deref().unwrap_or("(untitled)");
     out.push_str(&format!("{}: {}\n", item.data.item_type, title));
     out.push_str(&format!("Key:  {}\n", item.key));
+    out.push_str(&format!("Open: zotero://select/library/items/{}\n", item.key));
     if let Some(doi) = &item.data.doi {
         if !doi.is_empty() { out.push_str(&format!("DOI:  {doi}\n")); }
     }

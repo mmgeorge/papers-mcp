@@ -25,7 +25,7 @@ See `../papers/CHANGES.md` for how responses differ from the raw OpenAlex API.
 
 ### server.rs
 
-- `PapersMcp` struct holds an `OpenAlexClient`, `Option<ZoteroClient>`, `Option<DatalabClient>`, and a `ToolRouter<Self>`
+- `PapersMcp` struct holds an `OpenAlexClient`, `Option<ZoteroClient>`, `Option<String>` (`zotero_check_error`), `Option<DatalabClient>`, and a `ToolRouter<Self>`
 - `#[tool_router]` macro on the impl block generates a `tool_router()` constructor
 - `#[tool]` on each method registers it as an MCP tool with auto-generated JSON Schema
 - `#[tool_handler]` on the `ServerHandler` impl generates `call_tool`, `list_tools`, `get_tool`
@@ -34,11 +34,31 @@ See `../papers/CHANGES.md` for how responses differ from the raw OpenAlex API.
 - OpenAlex tools (29) delegate to `papers::api::*` functions (no direct papers-openalex imports)
 - Zotero tools (25) call `self.zotero` directly — see Zotero tools section below
 
+#### `zotero_check_error` field
+
+`PapersMcp` has a `zotero_check_error: Option<String>` field. During `new()` or `with_client()`,
+if `ZoteroClient::from_env_prefer_local()` returns `Err(ZoteroError::NotRunning { .. })`, the
+error message is stored here (and `zotero` is set to `None`). This lets us surface the "Zotero is
+installed but not running" error on all Zotero-dependent tools rather than silently omitting Zotero.
+
+#### `require_zotero()` helper
+
+All Zotero tools use this centralized guard instead of inline `ok_or_else`:
+```rust
+fn require_zotero(&self) -> Result<&ZoteroClient, String> { ... }
+```
+- Returns `Ok(&ZoteroClient)` when connected
+- Returns `Err` with the `zotero_check_error` message (e.g. "Zotero is installed but not running...") if set
+- Otherwise returns `Err("Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.")`
+
+`work_get` and `work_text` also guard against `zotero_check_error` at their start (even though they
+don't require Zotero, they benefit from early error surfacing when Zotero is expected but not running).
+
 #### Zotero tools (25)
 
 All Zotero tools start with:
 ```rust
-let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+let z = self.require_zotero()?;
 ```
 
 Multi-step tools chain multiple `ZoteroClient` calls:

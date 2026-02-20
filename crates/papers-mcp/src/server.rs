@@ -1,6 +1,7 @@
-use papers_core::{zotero as zotero_resolve, DiskCache, OpenAlexClient};
+use papers_core::{filter::FilterError, zotero as zotero_resolve, DiskCache, OpenAlexClient};
 use papers_datalab::DatalabClient;
 use papers_zotero::ZoteroClient;
+use std::sync::Arc;
 use std::time::Duration;
 use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -25,37 +26,30 @@ use crate::params::{
 #[derive(Clone)]
 pub struct PapersMcp {
     client: OpenAlexClient,
-    zotero: Option<ZoteroClient>,
+    zotero: Arc<tokio::sync::Mutex<Option<ZoteroClient>>>,
     datalab: Option<DatalabClient>,
     tool_router: ToolRouter<Self>,
 }
 
-impl Default for PapersMcp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl PapersMcp {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let mut client = OpenAlexClient::new();
         if let Ok(cache) = DiskCache::default_location(Duration::from_secs(600)) {
             client = client.with_cache(cache);
         }
-        let zotero = ZoteroClient::from_env().ok();
         let datalab = DatalabClient::from_env().ok();
         Self {
             client,
-            zotero,
+            zotero: Arc::new(tokio::sync::Mutex::new(None)),
             datalab,
             tool_router: Self::tool_router(),
         }
     }
 
-    pub fn with_client(client: OpenAlexClient) -> Self {
+    pub async fn with_client(client: OpenAlexClient) -> Self {
         Self {
             client,
-            zotero: ZoteroClient::from_env().ok(),
+            zotero: Arc::new(tokio::sync::Mutex::new(None)),
             datalab: DatalabClient::from_env().ok(),
             tool_router: Self::tool_router(),
         }
@@ -65,10 +59,36 @@ impl PapersMcp {
     pub fn with_zotero(zotero: ZoteroClient) -> Self {
         Self {
             client: OpenAlexClient::new(),
-            zotero: Some(zotero),
+            zotero: Arc::new(tokio::sync::Mutex::new(Some(zotero))),
             datalab: None,
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// Try to get the Zotero client, probing if not yet connected.
+    /// Caches a successful connection for future calls. Returns:
+    /// - `Ok(Some(client))` — connected
+    /// - `Ok(None)` — not configured (env vars absent)
+    /// - `Err(msg)` — installed but not running (`NotRunning` error)
+    async fn get_optional_zotero(&self) -> Result<Option<ZoteroClient>, String> {
+        let mut lock = self.zotero.lock().await;
+        if let Some(z) = lock.as_ref() {
+            return Ok(Some(z.clone()));
+        }
+        match ZoteroClient::from_env_prefer_local().await {
+            Ok(z) => {
+                *lock = Some(z.clone());
+                Ok(Some(z))
+            }
+            Err(e @ papers_zotero::ZoteroError::NotRunning { .. }) => Err(e.to_string()),
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn require_zotero(&self) -> Result<ZoteroClient, String> {
+        self.get_optional_zotero().await?.ok_or_else(|| {
+            "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string()
+        })
     }
 }
 
@@ -176,9 +196,25 @@ impl PapersMcp {
     // ── Get tools ────────────────────────────────────────────────────────
 
     /// Get a single work by ID (OpenAlex ID, DOI, PMID, or PMCID).
+    /// Response includes `in_zotero` (bool) and `zotero` (object or null) with brief Zotero library info.
     #[tool]
     pub async fn work_get(&self, Parameters(params): Parameters<GetToolParams>) -> Result<String, String> {
-        json_result(papers_core::api::work_get(&self.client, &params.id, &params.into_get_params()).await)
+        let zotero = self.get_optional_zotero().await?;
+        match papers_core::api::work_get_response(&self.client, zotero.as_ref(), &params.id, &params.into_get_params()).await {
+            Ok(response) => serde_json::to_string_pretty(&response).map_err(|e| format!("JSON serialization error: {e}")),
+            Err(FilterError::Suggestions { query, suggestions }) => {
+                let candidates: Vec<_> = suggestions
+                    .into_iter()
+                    .map(|(name, citations)| serde_json::json!({"name": name, "citations": citations}))
+                    .collect();
+                Ok(serde_json::json!({
+                    "message": "no_exact_match",
+                    "query": query,
+                    "candidates": candidates,
+                }).to_string())
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     /// Get a single author by ID (OpenAlex ID or ORCID).
@@ -293,7 +329,7 @@ impl PapersMcp {
     /// Excludes notes, attachments, and annotations. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_list(&self, Parameters(p): Parameters<ZoteroWorkListToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         let params = papers_zotero::ItemListParams {
             item_type: p.item_type,
             q: p.search,
@@ -313,17 +349,20 @@ impl PapersMcp {
     /// Get a single bibliographic item by Zotero key or title search. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
-        json_result(z.get_item(&key).await)
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
+        let item = z.get_item(&key).await.map_err(|e| e.to_string())?;
+        let mut value = serde_json::to_value(&item).map_err(|e| e.to_string())?;
+        value["zotero_uri"] = serde_json::Value::String(format!("zotero://select/library/items/{key}"));
+        serde_json::to_string_pretty(&value).map_err(|e| e.to_string())
     }
 
     /// List the collections a work belongs to. Multi-step: reads item record then resolves collection names.
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_collections(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let item = z.get_item(&key).await.map_err(|e| e.to_string())?;
         let col_keys = item.data.collections.clone();
         let mut collections = Vec::new();
@@ -339,8 +378,8 @@ impl PapersMcp {
     /// List notes attached to a specific work. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_notes(&self, Parameters(p): Parameters<ZoteroWorkChildrenToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::ItemListParams { item_type: Some("note".into()), limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_item_children(&key, &params).await)
     }
@@ -348,8 +387,8 @@ impl PapersMcp {
     /// List file attachments of a specific work. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_attachments(&self, Parameters(p): Parameters<ZoteroWorkChildrenToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_item_children(&key, &params).await)
     }
@@ -358,8 +397,8 @@ impl PapersMcp {
     /// then annotations per attachment. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_annotations(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
         let attachments = z.list_item_children(&key, &att_params).await.map_err(|e| e.to_string())?;
         let ann_params = papers_zotero::ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
@@ -376,8 +415,8 @@ impl PapersMcp {
     /// List tags attached to a specific work. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_work_tags(&self, Parameters(p): Parameters<ZoteroWorkTagsToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::TagListParams { q: p.search, qmode: Some("contains".to_string()), limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_item_tags(&key, &params).await)
     }
@@ -386,7 +425,7 @@ impl PapersMcp {
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_attachment_list(&self, Parameters(p): Parameters<ZoteroAttachmentListToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         let params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), q: p.search, sort: p.sort, direction: p.direction, limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_items(&params).await)
     }
@@ -394,8 +433,8 @@ impl PapersMcp {
     /// Get a single attachment item by key or title search. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_attachment_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         json_result(z.get_item(&key).await)
     }
 
@@ -403,7 +442,7 @@ impl PapersMcp {
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_annotation_list(&self, Parameters(p): Parameters<ZoteroAnnotationListToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         let params = papers_zotero::ItemListParams { item_type: Some("annotation".into()), limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_items(&params).await)
     }
@@ -411,8 +450,8 @@ impl PapersMcp {
     /// Get a single annotation by key or search string. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_annotation_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         json_result(z.get_item(&key).await)
     }
 
@@ -420,7 +459,7 @@ impl PapersMcp {
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_note_list(&self, Parameters(p): Parameters<ZoteroNoteListToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         let params = papers_zotero::ItemListParams { item_type: Some("note".into()), q: p.search, limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_items(&params).await)
     }
@@ -429,15 +468,15 @@ impl PapersMcp {
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_note_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_item_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         json_result(z.get_item(&key).await)
     }
 
     /// List collections in the Zotero library. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_list(&self, Parameters(p): Parameters<ZoteroCollectionListToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         let params = papers_zotero::CollectionListParams { sort: p.sort, direction: p.direction, limit: p.limit, start: p.start };
         let result = if p.scope.as_deref() == Some("top") {
             z.list_top_collections(&params).await
@@ -450,8 +489,8 @@ impl PapersMcp {
     /// Get a single collection by key or name search. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_get(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         json_result(z.get_collection(&key).await)
     }
 
@@ -459,8 +498,8 @@ impl PapersMcp {
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_works(&self, Parameters(p): Parameters<ZoteroCollectionWorksToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::ItemListParams {
             item_type: p.item_type,
             q: p.search,
@@ -478,8 +517,8 @@ impl PapersMcp {
     /// List attachment items within a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_attachments(&self, Parameters(p): Parameters<ZoteroWorkChildrenToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_collection_items(&key, &params).await)
     }
@@ -487,8 +526,8 @@ impl PapersMcp {
     /// List note items within a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_notes(&self, Parameters(p): Parameters<ZoteroCollectionNotesToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::ItemListParams { item_type: Some("note".into()), q: p.search, limit: p.limit, start: p.start, ..Default::default() };
         json_result(z.list_collection_items(&key, &params).await)
     }
@@ -497,8 +536,8 @@ impl PapersMcp {
     /// annotations per attachment. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_annotations(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
         let attachments = z.list_collection_items(&key, &att_params).await.map_err(|e| e.to_string())?;
         let ann_params = papers_zotero::ItemListParams { item_type: Some("annotation".into()), ..Default::default() };
@@ -515,8 +554,8 @@ impl PapersMcp {
     /// List sub-collections of a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_subcollections(&self, Parameters(p): Parameters<ZoteroCollectionSubcollectionsToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::CollectionListParams { sort: p.sort, direction: p.direction, limit: p.limit, start: p.start };
         json_result(z.list_subcollections(&key, &params).await)
     }
@@ -524,8 +563,8 @@ impl PapersMcp {
     /// List tags on items within a collection. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_collection_tags(&self, Parameters(p): Parameters<ZoteroCollectionTagsToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
-        let key = zotero_resolve::resolve_collection_key(z, &p.key).await.map_err(|e| e.to_string())?;
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_collection_key(&z, &p.key).await.map_err(|e| e.to_string())?;
         let params = papers_zotero::TagListParams { q: p.search, qmode: Some("contains".to_string()), limit: p.limit, start: p.start, ..Default::default() };
         let result = if p.top == Some(true) {
             z.list_collection_top_items_tags(&key, &params).await
@@ -540,7 +579,7 @@ impl PapersMcp {
     /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_tag_list(&self, Parameters(p): Parameters<ZoteroTagListToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         let params = papers_zotero::TagListParams { q: p.search, qmode: Some("contains".to_string()), sort: p.sort, direction: p.direction, limit: p.limit, start: p.start };
         let result = match p.scope.as_deref() {
             Some("trash") => z.list_trash_tags(&params).await,
@@ -553,21 +592,21 @@ impl PapersMcp {
     /// Get a specific tag by name. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_tag_get(&self, Parameters(p): Parameters<ZoteroTagGetToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         json_result(z.get_tag(&p.name).await)
     }
 
     /// List all saved searches in the library. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_search_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         json_result(z.list_searches().await)
     }
 
     /// List all Zotero groups accessible to the current user. Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
     #[tool]
     pub async fn zotero_group_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
-        let z = self.zotero.as_ref().ok_or_else(|| "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string())?;
+        let z = self.require_zotero().await?;
         json_result(z.list_groups().await)
     }
 
@@ -583,6 +622,7 @@ impl PapersMcp {
         peer: Peer<RoleServer>,
         Parameters(params): Parameters<WorkTextToolParams>,
     ) -> Result<String, String> {
+        let zotero = self.get_optional_zotero().await?;
         let datalab = self.datalab.as_ref().and_then(|dl| {
             let mode = match params.advanced.as_deref() {
                 Some("fast")     => papers_core::text::ProcessingMode::Fast,
@@ -592,11 +632,11 @@ impl PapersMcp {
             };
             Some((dl, mode))
         });
-        match papers_core::text::work_text(&self.client, self.zotero.as_ref(), datalab, &params.id).await {
+        match papers_core::text::work_text(&self.client, zotero.as_ref(), datalab, &params.id).await {
             Ok(result) => json_result::<_, String>(Ok(result)),
             Err(papers_core::text::WorkTextError::NoPdfFound { work_id, title, doi }) => {
                 // Try the fallback chain: sampling → elicitation → error
-                if let Some(result) = self.work_text_fallback(&peer, &work_id, title.as_deref(), doi.as_deref()).await {
+                if let Some(result) = self.work_text_fallback(&peer, &work_id, title.as_deref(), doi.as_deref(), zotero.as_ref()).await {
                     return result;
                 }
                 let display = title.as_deref().unwrap_or(&work_id);
@@ -609,7 +649,7 @@ impl PapersMcp {
                          Then call work_text again with the same ID."
                     ));
                 }
-                if self.zotero.is_none() {
+                if zotero.is_none() {
                     msg.push_str(
                         "\n\nNote: Zotero integration is not configured. \
                          Set ZOTERO_USER_ID and ZOTERO_API_KEY environment variables to enable it."
@@ -630,6 +670,7 @@ impl PapersMcp {
         work_id: &str,
         title: Option<&str>,
         doi: Option<&str>,
+        zotero: Option<&ZoteroClient>,
     ) -> Option<Result<String, String>> {
         let display = title.unwrap_or(work_id);
 
@@ -643,7 +684,7 @@ impl PapersMcp {
         }
 
         // Step B: Try elicitation — ask the user to add to Zotero via DOI
-        if let (Some(doi), Some(zotero)) = (doi, self.zotero.as_ref()) {
+        if let (Some(doi), Some(zotero)) = (doi, zotero) {
             let modes = peer.supported_elicitation_modes();
             if modes.contains(&rmcp::service::ElicitationMode::Url) {
                 let bare_doi = doi.strip_prefix("https://doi.org/").unwrap_or(doi);

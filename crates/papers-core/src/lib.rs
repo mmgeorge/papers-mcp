@@ -4,11 +4,13 @@ pub mod summary;
 pub mod text;
 pub mod zotero;
 
+pub use api::WorkGetResponse;
 pub use filter::{
     AuthorListParams, DomainListParams, FieldListParams, FilterError, FunderListParams,
     InstitutionListParams, PublisherListParams, SourceListParams, SubfieldListParams,
     TopicListParams, WorkListParams,
 };
+pub use text::ZoteroItemInfo;
 pub use papers_openalex::{
     Author, Domain, Field, Funder, HierarchyEntity, HierarchyIds, Institution, Publisher, Source,
     Subfield, Topic, Work,

@@ -134,6 +134,82 @@ fn collect_pdf_urls(work: &Work) -> Vec<String> {
     urls
 }
 
+/// Brief Zotero library info for a work matched by DOI.
+#[derive(Debug, Clone, Serialize)]
+pub struct ZoteroItemInfo {
+    pub key: String,
+    pub item_type: String,
+    pub tags: Vec<String>,
+    pub has_pdf: bool,
+    pub date_added: Option<String>,
+    pub uri: String,
+}
+
+/// Check if a work exists in the Zotero library, matched by DOI.
+///
+/// Returns `Ok(Some(...))` with brief metadata if found, `Ok(None)` if the
+/// work has no DOI or is not in the library, or an error on API failure.
+pub async fn find_work_in_zotero(
+    zotero: &ZoteroClient,
+    work: &papers_openalex::Work,
+) -> Result<Option<ZoteroItemInfo>, papers_zotero::ZoteroError> {
+    let doi = match &work.doi {
+        Some(d) => bare_doi(d),
+        None => return Ok(None),
+    };
+    let title = work.display_name.as_deref().or(work.title.as_deref());
+
+    // Search by title using the default q mode (title/creator/year only — fast).
+    // qmode("everything") would search full-text of attached PDFs, which is very slow.
+    // DOI validation is done below on the returned item's metadata, not via full-text search.
+    let t_search = std::time::Instant::now();
+    let items: Vec<papers_zotero::Item> = if let Some(t) = title {
+        let title_params = ItemListParams::builder().q(t).build();
+        let res = zotero.list_top_items(&title_params).await?;
+        eprintln!("[timing] zotero title search ({} results): {:?}", res.items.len(), t_search.elapsed());
+        res.items
+    } else {
+        eprintln!("[timing] zotero: no title, skipping search");
+        return Ok(None);
+    };
+
+    for item in &items {
+        let item_doi = match &item.data.doi {
+            Some(d) => d,
+            None => continue,
+        };
+        if !item_doi.eq_ignore_ascii_case(doi) {
+            continue;
+        }
+
+        let t_children = std::time::Instant::now();
+        let children = zotero
+            .list_item_children(&item.key, &ItemListParams::default())
+            .await?;
+        eprintln!("[timing] zotero list_item_children: {:?}", t_children.elapsed());
+        let has_pdf = children.items.iter().any(|child| {
+            child.data.content_type.as_deref() == Some("application/pdf")
+                && matches!(
+                    child.data.link_mode.as_deref(),
+                    Some("imported_file" | "imported_url")
+                )
+        });
+
+        let tags: Vec<String> = item.data.tags.iter().map(|t| t.tag.clone()).collect();
+        let uri = format!("zotero://select/library/items/{}", item.key);
+        return Ok(Some(ZoteroItemInfo {
+            key: item.key.clone(),
+            item_type: item.data.item_type.clone(),
+            tags,
+            has_pdf,
+            date_added: item.data.date_added.clone(),
+            uri,
+        }));
+    }
+
+    Ok(None)
+}
+
 /// Try to find and download a PDF from Zotero (local storage first, then remote API).
 pub async fn try_zotero(
     zotero: &ZoteroClient,
