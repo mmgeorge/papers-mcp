@@ -17,10 +17,10 @@ use crate::params::{
     WorkListToolParams, WorkTextToolParams,
     ZoteroAnnotationListToolParams, ZoteroAttachmentListToolParams, ZoteroCollectionListToolParams,
     ZoteroCollectionNotesToolParams, ZoteroCollectionSubcollectionsToolParams,
-    ZoteroCollectionTagsToolParams, ZoteroCollectionWorksToolParams, ZoteroKeyToolParams,
-    ZoteroNoParamsToolParams, ZoteroNoteListToolParams, ZoteroTagGetToolParams,
-    ZoteroTagListToolParams, ZoteroWorkChildrenToolParams, ZoteroWorkListToolParams,
-    ZoteroWorkTagsToolParams,
+    ZoteroCollectionTagsToolParams, ZoteroCollectionWorksToolParams, ZoteroDeletedListToolParams,
+    ZoteroKeyToolParams, ZoteroNoParamsToolParams, ZoteroNoteListToolParams,
+    ZoteroSettingGetToolParams, ZoteroTagGetToolParams, ZoteroTagListToolParams,
+    ZoteroWorkChildrenToolParams, ZoteroWorkListToolParams, ZoteroWorkTagsToolParams,
 };
 
 #[derive(Clone)]
@@ -70,6 +70,10 @@ impl PapersMcp {
     /// - `Ok(Some(client))` — connected
     /// - `Ok(None)` — not configured (env vars absent)
     /// - `Err(msg)` — installed but not running (`NotRunning` error)
+    /// Try to get a Zotero client for optional enrichment.
+    ///
+    /// Returns `Ok(None)` for any error — including "installed but not running" — so that
+    /// OpenAlex tools like `work_get` can still serve results without Zotero enrichment.
     async fn get_optional_zotero(&self) -> Result<Option<ZoteroClient>, String> {
         let mut lock = self.zotero.lock().await;
         if let Some(z) = lock.as_ref() {
@@ -80,15 +84,28 @@ impl PapersMcp {
                 *lock = Some(z.clone());
                 Ok(Some(z))
             }
-            Err(e @ papers_zotero::ZoteroError::NotRunning { .. }) => Err(e.to_string()),
             Err(_) => Ok(None),
         }
     }
 
+    /// Require a Zotero client; returns an error (including the "not running" hint) if unavailable.
+    ///
+    /// Used by dedicated Zotero tools where Zotero is mandatory.
     async fn require_zotero(&self) -> Result<ZoteroClient, String> {
-        self.get_optional_zotero().await?.ok_or_else(|| {
-            "Zotero not configured. Set ZOTERO_USER_ID and ZOTERO_API_KEY.".to_string()
-        })
+        {
+            let lock = self.zotero.lock().await;
+            if let Some(z) = lock.as_ref() {
+                return Ok(z.clone());
+            }
+        }
+        match ZoteroClient::from_env_prefer_local().await {
+            Ok(z) => {
+                let mut lock = self.zotero.lock().await;
+                *lock = Some(z.clone());
+                Ok(z)
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
 
@@ -608,6 +625,95 @@ impl PapersMcp {
     pub async fn zotero_group_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
         let z = self.require_zotero().await?;
         json_result(z.list_groups().await)
+    }
+
+    /// Get Zotero's indexed full-text content for a work's primary PDF attachment.
+    /// Resolves the work key, finds its first PDF child attachment, and returns the indexed text
+    /// (content, page count, character count). Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_fulltext(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
+        let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+        let children = z.list_item_children(&key, &att_params).await.map_err(|e| e.to_string())?;
+        let pdf = children.items.iter()
+            .find(|a| a.data.content_type.as_deref() == Some("application/pdf"))
+            .ok_or_else(|| format!("No PDF attachment found for item {key}"))?;
+        json_result(z.get_item_fulltext(&pdf.key).await)
+    }
+
+    /// Get the CDN view URL for a work's primary PDF attachment.
+    /// Resolves the work key, finds its first PDF child, and returns the URL.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_view_url(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
+        let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+        let children = z.list_item_children(&key, &att_params).await.map_err(|e| e.to_string())?;
+        let pdf = children.items.iter()
+            .find(|a| a.data.content_type.as_deref() == Some("application/pdf"))
+            .ok_or_else(|| format!("No PDF attachment found for item {key}"))?;
+        z.get_item_file_view_url(&pdf.key).await.map_err(|e| e.to_string())
+    }
+
+    /// Download the PDF for a work's primary attachment and return its size in bytes.
+    /// Useful to confirm a PDF is accessible. Use `zotero_work_view_url` to get the URL.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_work_view(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
+        let att_params = papers_zotero::ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+        let children = z.list_item_children(&key, &att_params).await.map_err(|e| e.to_string())?;
+        let pdf = children.items.iter()
+            .find(|a| a.data.content_type.as_deref() == Some("application/pdf"))
+            .ok_or_else(|| format!("No PDF attachment found for item {key}"))?;
+        let bytes = z.get_item_file_view(&pdf.key).await.map_err(|e| e.to_string())?;
+        Ok(format!("{{\"size_bytes\": {}}}", bytes.len()))
+    }
+
+    /// Get the CDN view URL for a specific attachment item by key.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_attachment_url(&self, Parameters(p): Parameters<ZoteroKeyToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        let key = zotero_resolve::resolve_item_key(&z, &p.key).await.map_err(|e| e.to_string())?;
+        z.get_item_file_view_url(&key).await.map_err(|e| e.to_string())
+    }
+
+    /// Get permissions and identity for the current API key (user info, access scopes).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_permission_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        json_result(z.get_current_key_info().await)
+    }
+
+    /// List all library settings (tagColors, lastPageIndex, feeds, etc.).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_setting_list(&self, Parameters(_p): Parameters<ZoteroNoParamsToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        json_result(z.get_settings().await)
+    }
+
+    /// Get a single library setting by key (e.g. `"tagColors"`).
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_setting_get(&self, Parameters(p): Parameters<ZoteroSettingGetToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        json_result(z.get_setting(&p.key).await)
+    }
+
+    /// List objects deleted from the library since a given version.
+    /// Returns keys of deleted collections, items, searches, tags, and settings.
+    /// Requires ZOTERO_USER_ID and ZOTERO_API_KEY.
+    #[tool]
+    pub async fn zotero_deleted_list(&self, Parameters(p): Parameters<ZoteroDeletedListToolParams>) -> Result<String, String> {
+        let z = self.require_zotero().await?;
+        let params = papers_zotero::DeletedParams { since: p.since.unwrap_or(0) };
+        json_result(z.get_deleted(&params).await)
     }
 
     /// Get the full text content of a scholarly work by downloading and extracting its PDF.

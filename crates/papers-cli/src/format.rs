@@ -8,7 +8,8 @@ use papers_core::{
     Author, AutocompleteResponse, Domain, Field, FindWorksResponse, Funder, Institution, ListMeta,
     Publisher, Source, Subfield, Topic, Work,
 };
-use papers_zotero::{Collection, Creator, Group, Item, PagedResponse, SavedSearch, Tag};
+use std::collections::HashMap;
+use papers_zotero::{Collection, Creator, DeletedObjects, Group, Item, ItemFulltext, PagedResponse, SavedSearch, SettingEntry, Tag, VersionedResponse};
 
 // ── Meta line ─────────────────────────────────────────────────────────────
 
@@ -1170,6 +1171,115 @@ pub fn format_work_text(result: &WorkTextResult) -> String {
     out.push_str(&result.text);
     if !result.text.ends_with('\n') {
         out.push('\n');
+    }
+    out
+}
+
+// ── Zotero fulltext ───────────────────────────────────────────────────────
+
+pub fn format_zotero_work_fulltext(resp: &VersionedResponse<ItemFulltext>) -> String {
+    let ft = &resp.data;
+    let mut out = String::new();
+    if let Some(v) = resp.last_modified_version {
+        out.push_str(&format!("Version: {v}\n"));
+    }
+    let mut stats = Vec::new();
+    if let Some(p) = ft.indexed_pages {
+        stats.push(format!("{p} indexed pages"));
+    }
+    if let Some(p) = ft.total_pages {
+        stats.push(format!("{p} total pages"));
+    }
+    if let Some(c) = ft.indexed_chars {
+        stats.push(format!("{c} indexed chars"));
+    }
+    if !stats.is_empty() {
+        out.push_str(&format!("{}\n", stats.join(" · ")));
+    }
+    out.push('\n');
+    out.push_str(&ft.content);
+    if !ft.content.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+// ── Zotero settings ───────────────────────────────────────────────────────
+
+pub fn format_zotero_setting_list(resp: &VersionedResponse<HashMap<String, SettingEntry>>) -> String {
+    let mut out = String::new();
+    if let Some(v) = resp.last_modified_version {
+        out.push_str(&format!("Library version: {v}\n"));
+    }
+    let mut keys: Vec<_> = resp.data.keys().collect();
+    keys.sort();
+    for key in keys {
+        let entry = &resp.data[key];
+        let val_str = serde_json::to_string(&entry.value).unwrap_or_else(|_| "?".to_string());
+        out.push_str(&format!("  {key} (v{}): {val_str}\n", entry.version));
+    }
+    out
+}
+
+pub fn format_zotero_setting_get(key: &str, resp: &VersionedResponse<SettingEntry>) -> String {
+    let mut out = String::new();
+    if let Some(v) = resp.last_modified_version {
+        out.push_str(&format!("Version: {v}\n"));
+    }
+    let val_str = serde_json::to_string_pretty(&resp.data.value).unwrap_or_else(|_| "?".to_string());
+    out.push_str(&format!("Setting: {key} (v{})\n", resp.data.version));
+    out.push_str(&format!("Value:\n  {val_str}\n"));
+    out
+}
+
+// ── Zotero deleted ────────────────────────────────────────────────────────
+
+pub fn format_zotero_deleted_list(resp: &VersionedResponse<DeletedObjects>) -> String {
+    let d = &resp.data;
+    let mut out = String::new();
+    if let Some(v) = resp.last_modified_version {
+        out.push_str(&format!("Library version: {v}\n"));
+    }
+    let print_section = |out: &mut String, label: &str, keys: &[String]| {
+        if !keys.is_empty() {
+            out.push_str(&format!("\n{label} ({}):\n", keys.len()));
+            for k in keys {
+                out.push_str(&format!("  {k}\n"));
+            }
+        }
+    };
+    print_section(&mut out, "Deleted items", &d.items);
+    print_section(&mut out, "Deleted collections", &d.collections);
+    print_section(&mut out, "Deleted searches", &d.searches);
+    print_section(&mut out, "Deleted tags", &d.tags);
+    print_section(&mut out, "Deleted settings", &d.settings);
+    if d.items.is_empty() && d.collections.is_empty() && d.searches.is_empty()
+        && d.tags.is_empty() && d.settings.is_empty()
+    {
+        out.push_str("No deletions since requested version.\n");
+    }
+    out
+}
+
+// ── Zotero permission ─────────────────────────────────────────────────────
+
+pub fn format_zotero_permission_list(info: &serde_json::Value) -> String {
+    let mut out = String::new();
+    if let Some(uid) = info.get("userID").and_then(|v| v.as_u64()) {
+        out.push_str(&format!("User ID:  {uid}\n"));
+    }
+    if let Some(username) = info.get("username").and_then(|v| v.as_str()) {
+        out.push_str(&format!("Username: {username}\n"));
+    }
+    if let Some(key) = info.get("key").and_then(|v| v.as_str()) {
+        out.push_str(&format!("Key:      {key}\n"));
+    }
+    if let Some(access) = info.get("access") {
+        let access_str = serde_json::to_string_pretty(access).unwrap_or_else(|_| "?".to_string());
+        out.push_str(&format!("\nAccess:\n"));
+        for line in access_str.lines() {
+            out.push_str(&format!("  {line}\n"));
+        }
     }
     out
 }

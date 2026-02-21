@@ -8,8 +8,9 @@ use cli::{
     InstitutionCommand, InstitutionFilterArgs, PublisherCommand, PublisherFilterArgs,
     SourceCommand, SourceFilterArgs, SubfieldCommand, SubfieldFilterArgs, TopicCommand,
     TopicFilterArgs, WorkCommand, WorkFilterArgs, ZoteroAnnotationCommand, ZoteroAttachmentCommand,
-    ZoteroCollectionCommand, ZoteroCommand, ZoteroGroupCommand, ZoteroNoteCommand,
-    ZoteroSearchCommand, ZoteroTagCommand, ZoteroWorkCommand,
+    ZoteroCollectionCommand, ZoteroCommand, ZoteroDeletedCommand, ZoteroGroupCommand,
+    ZoteroNoteCommand, ZoteroPermissionCommand, ZoteroSearchCommand, ZoteroSettingCommand,
+    ZoteroTagCommand, ZoteroWorkCommand,
 };
 use papers_core::{
     filter::FilterError,
@@ -18,7 +19,7 @@ use papers_core::{
     SourceListParams, SubfieldListParams, TopicListParams, WorkListParams,
 };
 use papers_core::zotero::{resolve_collection_key, resolve_item_key, resolve_search_key};
-use papers_zotero::{CollectionListParams, Item, ItemListParams, TagListParams, ZoteroClient};
+use papers_zotero::{CollectionListParams, DeletedParams, Item, ItemListParams, TagListParams, ZoteroClient};
 use std::time::Duration;
 
 async fn zotero_client() -> Result<ZoteroClient, papers_zotero::ZoteroError> {
@@ -252,6 +253,17 @@ fn is_annotatable_attachment(att: &Item) -> bool {
 fn exit_err(msg: &str) -> ! {
     eprintln!("Error: {msg}");
     std::process::exit(1);
+}
+
+/// Find the first PDF attachment key for a given item key.
+async fn find_pdf_attachment_key(zotero: &ZoteroClient, item_key: &str) -> Result<String, String> {
+    let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
+    let children = zotero.list_item_children(item_key, &att_params).await
+        .map_err(|e| e.to_string())?;
+    children.items.iter()
+        .find(|a| a.data.content_type.as_deref() == Some("application/pdf"))
+        .map(|a| a.key.clone())
+        .ok_or_else(|| format!("No PDF attachment found for item {item_key}"))
 }
 
 #[tokio::main]
@@ -834,6 +846,42 @@ async fn main() {
                             Err(e) => exit_err(&e.to_string()),
                         }
                     }
+                    ZoteroWorkCommand::Text { key, json } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
+                        let att_key = find_pdf_attachment_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e));
+                        match zotero.get_item_fulltext(&att_key).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_work_fulltext(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::ViewUrl { key } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
+                        let att_key = find_pdf_attachment_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e));
+                        match zotero.get_item_file_view_url(&att_key).await {
+                            Ok(url) => println!("{url}"),
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::View { key, output } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
+                        let att_key = find_pdf_attachment_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e));
+                        match zotero.get_item_file_view(&att_key).await {
+                            Ok(bytes) => {
+                                if output == "-" {
+                                    use std::io::Write;
+                                    std::io::stdout().write_all(&bytes)
+                                        .unwrap_or_else(|e| exit_err(&e.to_string()));
+                                } else {
+                                    std::fs::write(&output, &bytes)
+                                        .unwrap_or_else(|e| exit_err(&e.to_string()));
+                                    eprintln!("Saved {} bytes to {output}", bytes.len());
+                                }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
                 },
 
                 ZoteroCommand::Attachment { cmd } => match cmd {
@@ -869,6 +917,13 @@ async fn main() {
                                     eprintln!("Saved {} bytes to {output}", bytes.len());
                                 }
                             }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroAttachmentCommand::Url { key } => {
+                        let key = resolve_item_key(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e.to_string()));
+                        match zotero.get_item_file_view_url(&key).await {
+                            Ok(url) => println!("{url}"),
                             Err(e) => exit_err(&e.to_string()),
                         }
                     }
@@ -1075,6 +1130,48 @@ async fn main() {
                         match zotero.list_groups().await {
                             Ok(resp) => {
                                 if json { print_json(&resp); } else { print!("{}", format::format_zotero_group_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Setting { cmd } => match cmd {
+                    ZoteroSettingCommand::List { json } => {
+                        match zotero.get_settings().await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_setting_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroSettingCommand::Get { key, json } => {
+                        match zotero.get_setting(&key).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_setting_get(&key, &resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Deleted { cmd } => match cmd {
+                    ZoteroDeletedCommand::List { since, json } => {
+                        let params = DeletedParams { since };
+                        match zotero.get_deleted(&params).await {
+                            Ok(resp) => {
+                                if json { print_json(&resp); } else { print!("{}", format::format_zotero_deleted_list(&resp)); }
+                            }
+                            Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                },
+
+                ZoteroCommand::Permission { cmd } => match cmd {
+                    ZoteroPermissionCommand::List { json } => {
+                        match zotero.get_current_key_info().await {
+                            Ok(info) => {
+                                if json { print_json(&info); } else { print!("{}", format::format_zotero_permission_list(&info)); }
                             }
                             Err(e) => exit_err(&e.to_string()),
                         }

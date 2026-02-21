@@ -674,6 +674,21 @@ pub enum ZoteroCommand {
         #[command(subcommand)]
         cmd: ZoteroGroupCommand,
     },
+    /// Library settings (tagColors, feeds, etc.)
+    Setting {
+        #[command(subcommand)]
+        cmd: ZoteroSettingCommand,
+    },
+    /// Objects deleted from the library
+    Deleted {
+        #[command(subcommand)]
+        cmd: ZoteroDeletedCommand,
+    },
+    /// API key identity and permissions
+    Permission {
+        #[command(subcommand)]
+        cmd: ZoteroPermissionCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -780,6 +795,27 @@ pub enum ZoteroWorkCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Get Zotero's indexed full text for a work's primary PDF attachment
+    Text {
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get the CDN view URL for a work's primary PDF attachment
+    ViewUrl {
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
+        key: String,
+    },
+    /// Download the PDF for a work's primary attachment (writes to file or stdout)
+    View {
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
+        key: String,
+        /// Output path (use - for stdout)
+        #[arg(long, short = 'o', required = true)]
+        output: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -820,6 +856,11 @@ pub enum ZoteroAttachmentCommand {
         /// Output path (use - for stdout)
         #[arg(long, short = 'o', required = true)]
         output: String,
+    },
+    /// Get the CDN view URL for an attachment
+    Url {
+        /// Attachment key (e.g. LF4MJWZK) or a title/filename search string
+        key: String,
     },
 }
 
@@ -1090,6 +1131,47 @@ pub enum ZoteroSearchCommand {
 #[derive(Subcommand)]
 pub enum ZoteroGroupCommand {
     /// List all Zotero groups accessible to the current user
+    List {
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroSettingCommand {
+    /// List all library settings (tagColors, etc.)
+    List {
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Get a single library setting by key
+    Get {
+        /// Setting key (e.g. tagColors)
+        key: String,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroDeletedCommand {
+    /// List objects deleted from the library since a given version
+    List {
+        /// Library version to sync from (0 = all deletions)
+        #[arg(long, default_value = "0")]
+        since: u64,
+        /// Output raw JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZoteroPermissionCommand {
+    /// List permissions and identity for the current API key
     List {
         /// Output raw JSON
         #[arg(long)]

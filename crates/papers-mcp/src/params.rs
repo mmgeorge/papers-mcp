@@ -954,6 +954,21 @@ pub struct ZoteroTagGetToolParams {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ZoteroNoParamsToolParams {}
 
+/// Parameters for `zotero_deleted_list`.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroDeletedListToolParams {
+    /// Only include objects deleted since this library version (0 or omit = all deletions).
+    #[serde(default, deserialize_with = "lax_optional_u64")]
+    pub since: Option<u64>,
+}
+
+/// Parameters for `zotero_setting_get`.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ZoteroSettingGetToolParams {
+    /// Setting key (e.g. `"tagColors"`, `"feeds/lastPageIndex"`).
+    pub key: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

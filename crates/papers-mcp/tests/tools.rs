@@ -178,6 +178,60 @@ fn zotero_groups_body() -> String {
     .to_string()
 }
 
+fn zotero_attachment_body() -> String {
+    r#"{
+        "key": "ATT12345",
+        "version": 2,
+        "library": {"type": "user", "id": 1, "name": "test", "links": {}},
+        "links": {},
+        "meta": {},
+        "data": {
+            "key": "ATT12345",
+            "version": 2,
+            "itemType": "attachment",
+            "linkMode": "imported_file",
+            "contentType": "application/pdf",
+            "filename": "paper.pdf",
+            "parentItem": "ABC12345"
+        }
+    }"#
+    .to_string()
+}
+
+fn zotero_attachments_body() -> String {
+    format!("[{}]", zotero_attachment_body())
+}
+
+fn zotero_fulltext_body() -> String {
+    r#"{"content": "This is the indexed full text content.", "indexedPages": 5, "totalPages": 10}"#
+        .to_string()
+}
+
+fn zotero_fulltext_response(body: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("Last-Modified-Version", "100")
+        .set_body_string(body)
+}
+
+fn zotero_settings_body() -> String {
+    r##"{"tagColors": {"value": [{"name": "Starred", "color": "#ffd400"}], "version": 5}}"##
+        .to_string()
+}
+
+fn zotero_setting_entry_body() -> String {
+    r##"{"value": [{"name": "Starred", "color": "#ffd400"}], "version": 5}"##.to_string()
+}
+
+fn zotero_deleted_body() -> String {
+    r#"{"collections": [], "searches": [], "items": ["DEL12345"], "tags": [], "settings": []}"#
+        .to_string()
+}
+
+fn zotero_key_info_body() -> String {
+    r#"{"userID": 16916553, "username": "testuser", "access": {"user": {"library": true, "files": true}}}"#
+        .to_string()
+}
+
 // ── List tool tests ──────────────────────────────────────────────────
 
 #[tokio::test]
@@ -397,13 +451,177 @@ async fn test_work_get_suggestions_returns_ok_with_json_body() {
     assert!(candidates.contains(&serde_json::json!({"name": "High-performance GPU rasterization", "citations": 17})));
 }
 
+// ── New Zotero tool tests ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_zotero_work_fulltext() {
+    let mock = MockServer::start().await;
+    // First call: get item to resolve key (direct key lookup)
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(zotero_array_response(&zotero_item_body()))
+        .mount(&mock)
+        .await;
+    // Second call: list children (attachments)
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_array_response(&zotero_attachments_body()))
+        .mount(&mock)
+        .await;
+    // Third call: get fulltext for attachment
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ATT12345/fulltext"))
+        .respond_with(zotero_fulltext_response(&zotero_fulltext_body()))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_fulltext(Parameters(params)).await;
+    let text = result.unwrap();
+    assert!(text.contains("indexed full text"), "Expected fulltext content, got: {text}");
+}
+
+#[tokio::test]
+async fn test_zotero_work_view_url() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345"))
+        .respond_with(zotero_array_response(&zotero_item_body()))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ABC12345/children"))
+        .respond_with(zotero_array_response(&zotero_attachments_body()))
+        .mount(&mock)
+        .await;
+    // /file/view/url returns plain text URL
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ATT12345/file/view/url"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("https://cdn.example.com/paper.pdf"))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ABC12345"})).unwrap();
+    let result = server.zotero_work_view_url(Parameters(params)).await;
+    let url = result.unwrap();
+    assert!(url.contains("cdn.example.com"), "Expected CDN URL, got: {url}");
+}
+
+#[tokio::test]
+async fn test_zotero_attachment_url() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ATT12345"))
+        .respond_with(ResponseTemplate::new(200)
+            .insert_header("Last-Modified-Version", "100")
+            .set_body_string(&zotero_attachment_body()))
+        .mount(&mock)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/ATT12345/file/view/url"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("https://cdn.example.com/att.pdf"))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "ATT12345"})).unwrap();
+    let result = server.zotero_attachment_url(Parameters(params)).await;
+    let url = result.unwrap();
+    assert!(url.contains("cdn.example.com"), "Expected CDN URL, got: {url}");
+}
+
+#[tokio::test]
+async fn test_zotero_permission_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/keys/current"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(zotero_key_info_body()))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_permission_list(Parameters(params)).await;
+    let text = result.unwrap();
+    assert!(text.contains("16916553"), "Expected userID in response: {text}");
+    assert!(text.contains("testuser"), "Expected username in response: {text}");
+}
+
+#[tokio::test]
+async fn test_zotero_setting_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/settings"))
+        .respond_with(zotero_fulltext_response(&zotero_settings_body()))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_setting_list(Parameters(params)).await;
+    let text = result.unwrap();
+    assert!(text.contains("tagColors"), "Expected settings in response: {text}");
+}
+
+#[tokio::test]
+async fn test_zotero_setting_get() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/settings/tagColors"))
+        .respond_with(zotero_fulltext_response(&zotero_setting_entry_body()))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"key": "tagColors"})).unwrap();
+    let result = server.zotero_setting_get(Parameters(params)).await;
+    let text = result.unwrap();
+    assert!(text.contains("Starred"), "Expected setting value in response: {text}");
+}
+
+#[tokio::test]
+async fn test_zotero_deleted_list() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/deleted"))
+        .respond_with(zotero_fulltext_response(&zotero_deleted_body()))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    let params = serde_json::from_value(serde_json::json!({"since": 0})).unwrap();
+    let result = server.zotero_deleted_list(Parameters(params)).await;
+    let text = result.unwrap();
+    assert!(text.contains("DEL12345"), "Expected deleted item key in response: {text}");
+}
+
+#[tokio::test]
+async fn test_zotero_deleted_list_no_params() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/deleted"))
+        .respond_with(zotero_fulltext_response(
+            r#"{"collections": [], "searches": [], "items": [], "tags": [], "settings": []}"#
+        ))
+        .mount(&mock)
+        .await;
+
+    let server = make_zotero_server(&mock);
+    // since is optional — defaults to 0
+    let params = serde_json::from_value(serde_json::json!({})).unwrap();
+    let result = server.zotero_deleted_list(Parameters(params)).await;
+    assert!(result.is_ok());
+}
+
 // ── Tool listing tests ───────────────────────────────────────────────
 
 #[test]
-fn test_tool_router_has_54_tools() {
+fn test_tool_router_has_62_tools() {
     let router = PapersMcp::tool_router();
     let tools = router.list_all();
-    assert_eq!(tools.len(), 54);
+    assert_eq!(tools.len(), 62);
 }
 
 #[test]
@@ -468,6 +686,15 @@ fn test_all_tool_names_present() {
         "zotero_tag_get",
         "zotero_search_list",
         "zotero_group_list",
+        // New tools
+        "zotero_work_fulltext",
+        "zotero_work_view",
+        "zotero_work_view_url",
+        "zotero_attachment_url",
+        "zotero_permission_list",
+        "zotero_setting_list",
+        "zotero_setting_get",
+        "zotero_deleted_list",
     ];
 
     for name in &expected {

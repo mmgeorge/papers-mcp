@@ -682,9 +682,68 @@ impl ZoteroClient {
     /// Returns 404 if the item has no indexed content.
     /// PDF attachments populate `indexed_pages` / `total_pages`;
     /// other document types populate `indexed_chars` / `total_chars`.
+    ///
+    /// When the local Zotero connector is active and the API endpoint is not
+    /// available (e.g. older Zotero 7.0.x builds), automatically falls back to
+    /// reading the `.zotero-ft-cache` file from local Zotero storage.
     pub async fn get_item_fulltext(&self, key: &str) -> Result<VersionedResponse<ItemFulltext>> {
         let path = format!("{}/items/{}/fulltext", self.user_prefix(), key);
-        self.get_json_versioned(&path, vec![]).await
+        match self.get_json_versioned(&path, vec![]).await {
+            Ok(r) => Ok(r),
+            Err(ZoteroError::Api { status: 404, .. }) => {
+                // The local Zotero connector may not expose /fulltext (older
+                // builds).  Fall back to reading the .zotero-ft-cache file
+                // that Zotero writes alongside every indexed PDF.
+                self.get_item_fulltext_from_cache(key).await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Read fulltext from Zotero's local `.zotero-ft-cache` file.
+    ///
+    /// Called automatically by [`get_item_fulltext`] when the API returns 404.
+    async fn get_item_fulltext_from_cache(
+        &self,
+        key: &str,
+    ) -> Result<VersionedResponse<ItemFulltext>> {
+        let file_url_str = self.get_item_file_view_url(key).await?;
+        if let Ok(file_url) = reqwest::Url::parse(&file_url_str) {
+            if file_url.scheme() == "file" {
+                if let Ok(pdf_path) = file_url.to_file_path() {
+                    let cache_path = pdf_path
+                        .parent()
+                        .unwrap_or(pdf_path.as_path())
+                        .join(".zotero-ft-cache");
+                    if cache_path.exists() {
+                        let content =
+                            std::fs::read_to_string(&cache_path).map_err(|e| {
+                                ZoteroError::Api {
+                                    status: 0,
+                                    message: format!(
+                                        "local ft-cache read error ({}): {e}",
+                                        cache_path.display()
+                                    ),
+                                }
+                            })?;
+                        return Ok(VersionedResponse {
+                            data: ItemFulltext {
+                                content,
+                                indexed_pages: None,
+                                total_pages: None,
+                                indexed_chars: None,
+                                total_chars: None,
+                            },
+                            last_modified_version: None,
+                        });
+                    }
+                }
+            }
+        }
+        Err(ZoteroError::Api {
+            status: 404,
+            message: "Fulltext not indexed or cache file not found".to_string(),
+        })
     }
 
     // ── Deleted-objects endpoint ───────────────────────────────────────
@@ -735,14 +794,51 @@ impl ZoteroClient {
     ///
     /// `GET /users/<id>/items/<key>/file/view`
     ///
-    /// Follows the 302 redirect to the Zotero CDN and returns the raw bytes.
-    /// Unlike [`download_item_file`], the redirect target is a stable Zotero
-    /// CDN URL rather than a short-lived S3 presigned URL.
+    /// On the remote Zotero API this follows a 302 redirect to the stable CDN
+    /// URL and returns the raw bytes.  The local Zotero connector instead
+    /// returns a `302 Location: file:///…` pointing at the local Zotero
+    /// storage directory; in that case the file is read directly from disk.
     ///
     /// [`download_item_file`]: ZoteroClient::download_item_file
     pub async fn get_item_file_view(&self, key: &str) -> Result<Vec<u8>> {
         let path = format!("{}/items/{}/file/view", self.user_prefix(), key);
-        self.get_binary(&path).await
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .http
+            .get(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .send()
+            .await?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(resp.bytes().await?.to_vec());
+        }
+        // The local Zotero connector redirects to file:// which reqwest cannot
+        // follow.  Detect that case and read the file from disk instead.
+        if status.as_u16() == 302 {
+            if let Some(location) = resp.headers().get("Location") {
+                if let Ok(loc_str) = location.to_str() {
+                    if let Ok(file_url) = reqwest::Url::parse(loc_str) {
+                        if file_url.scheme() == "file" {
+                            if let Ok(file_path) = file_url.to_file_path() {
+                                return std::fs::read(&file_path).map_err(|e| {
+                                    ZoteroError::Api {
+                                        status: 0,
+                                        message: format!(
+                                            "local file read error ({}): {e}",
+                                            file_path.display()
+                                        ),
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let message = resp.text().await.unwrap_or_default();
+        Err(ZoteroError::Api { status: status.as_u16(), message })
     }
 
     /// Get a pre-signed CDN URL for viewing an attachment file.
