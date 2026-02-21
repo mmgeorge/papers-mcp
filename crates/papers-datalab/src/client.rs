@@ -25,7 +25,7 @@ const DEFAULT_BASE_URL: &str = "https://www.datalab.to";
 /// let result = client.convert_document(MarkerRequest {
 ///     file: Some(pdf_bytes),
 ///     filename: Some("paper.pdf".into()),
-///     output_format: OutputFormat::Markdown,
+///     output_format: vec![OutputFormat::Markdown],
 ///     mode: ProcessingMode::Accurate,
 ///     ..Default::default()
 /// }).await?;
@@ -107,13 +107,13 @@ impl DatalabClient {
             form = form.text("file_url", url);
         }
 
-        // Output format (serialize to string)
-        let fmt = match req.output_format {
+        // Output format (serialize to comma-joined string)
+        let fmt = req.output_format.iter().map(|f| match f {
             crate::types::OutputFormat::Markdown => "markdown",
             crate::types::OutputFormat::Html => "html",
             crate::types::OutputFormat::Json => "json",
             crate::types::OutputFormat::Chunks => "chunks",
-        };
+        }).collect::<Vec<_>>().join(",");
         form = form.text("output_format", fmt);
 
         // Processing mode

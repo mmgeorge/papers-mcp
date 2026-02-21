@@ -1,4 +1,5 @@
 pub use papers_datalab::ProcessingMode;
+use base64::Engine as _;
 use papers_datalab::{DatalabClient, MarkerRequest, OutputFormat};
 use papers_openalex::{GetParams, OpenAlexClient, Work};
 use papers_zotero::{ItemListParams, ZoteroClient};
@@ -103,6 +104,10 @@ fn zotero_data_dir() -> Option<PathBuf> {
         return Some(PathBuf::from(dir));
     }
     dirs::home_dir().map(|h| h.join("Zotero"))
+}
+
+fn datalab_cache_dir(short_id: &str) -> Option<PathBuf> {
+    dirs::cache_dir().map(|d| d.join("papers").join("datalab").join(short_id))
 }
 
 /// Collect all pdf_url values from an OpenAlex Work's locations.
@@ -211,11 +216,14 @@ pub async fn find_work_in_zotero(
 }
 
 /// Try to find and download a PDF from Zotero (local storage first, then remote API).
+///
+/// Returns `(pdf_bytes, source, zotero_item_key)` where `zotero_item_key` is the
+/// parent bibliographic item key (e.g. `U9PRIZJ7`), suitable for use as a cache ID.
 pub async fn try_zotero(
     zotero: &ZoteroClient,
     doi: &str,
     title: Option<&str>,
-) -> Result<Option<(Vec<u8>, PdfSource)>, WorkTextError> {
+) -> Result<Option<(Vec<u8>, PdfSource, String)>, WorkTextError> {
     // Zotero API's `q` parameter only searches title, creator, year, and full-text
     // content — it does NOT search metadata fields like DOI (per Zotero docs:
     // "Searching of other fields will be possible in the future").
@@ -283,6 +291,7 @@ pub async fn try_zotero(
                             PdfSource::ZoteroLocal {
                                 path: local_path.to_string_lossy().into_owned(),
                             },
+                            item.key.clone(),
                         )));
                     }
                 }
@@ -296,6 +305,7 @@ pub async fn try_zotero(
                         PdfSource::ZoteroRemote {
                             item_key: child.key.clone(),
                         },
+                        item.key.clone(),
                     )));
                 }
                 _ => continue,
@@ -396,24 +406,76 @@ async fn try_openalex_content(
 }
 
 /// Extract text from PDF bytes, routing through DataLab if `datalab` is `Some`.
-async fn do_extract(
+///
+/// `cache_id` is the key used for the on-disk cache directory. For Zotero-sourced PDFs
+/// this should be the Zotero parent item key; for other sources the OpenAlex short ID.
+pub async fn do_extract(
     pdf_bytes: Vec<u8>,
-    short_id: &str,
+    cache_id: &str,
     datalab: Option<(&DatalabClient, ProcessingMode)>,
     source: &mut PdfSource,
 ) -> Result<String, WorkTextError> {
     if let Some((dl, mode)) = datalab {
+        // --- cache check ---
+        let cache_dir = datalab_cache_dir(cache_id);
+        if let Some(ref dir) = cache_dir {
+            let md_path = dir.join(format!("{}.md", cache_id));
+            if let Some(text) = std::fs::read_to_string(&md_path).ok() {
+                *source = PdfSource::DataLab;
+                return Ok(text);
+            }
+        }
+
+        // --- API call ---
         let dl_result = dl
             .convert_document(MarkerRequest {
                 file: Some(pdf_bytes),
-                filename: Some(format!("{}.pdf", short_id)),
-                output_format: OutputFormat::Markdown,
+                filename: Some(format!("{}.pdf", cache_id)),
+                output_format: vec![OutputFormat::Markdown, OutputFormat::Json],
                 mode,
                 ..Default::default()
             })
             .await?;
+
         *source = PdfSource::DataLab;
-        Ok(dl_result.markdown.unwrap_or_default())
+        let markdown = dl_result.markdown.clone().unwrap_or_default();
+
+        // --- write cache (best-effort, errors are ignored) ---
+        if let Some(ref dir) = cache_dir {
+            let _ = std::fs::create_dir_all(dir);
+
+            // Write markdown
+            let md_path = dir.join(format!("{}.md", cache_id));
+            let _ = std::fs::write(&md_path, &markdown);
+
+            // Write JSON
+            if let Some(ref json_val) = dl_result.json {
+                let json_path = dir.join(format!("{}.json", cache_id));
+                let _ = std::fs::write(&json_path, json_val.to_string());
+            }
+
+            // Write images
+            if let Some(ref images) = dl_result.images {
+                if !images.is_empty() {
+                    let img_dir = dir.join("images");
+                    let _ = std::fs::create_dir_all(&img_dir);
+                    for (name, data) in images {
+                        // Strip data URI prefix if present: "data:image/...;base64,"
+                        let b64 = if let Some(pos) = data.find(";base64,") {
+                            &data[pos + 8..]
+                        } else {
+                            data.as_str()
+                        };
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                            let img_path = img_dir.join(name);
+                            let _ = std::fs::write(&img_path, bytes);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(markdown)
     } else {
         extract_text(&pdf_bytes)
     }
@@ -448,8 +510,8 @@ pub async fn work_text(
 
     // 2. Try Zotero (local then remote)
     if let (Some(zotero), Some(doi)) = (zotero, doi) {
-        if let Some((bytes, mut source)) = try_zotero(zotero, doi, title.as_deref()).await? {
-            let text = do_extract(bytes, short_id, datalab, &mut source).await?;
+        if let Some((bytes, mut source, zotero_key)) = try_zotero(zotero, doi, title.as_deref()).await? {
+            let text = do_extract(bytes, &zotero_key, datalab, &mut source).await?;
             return Ok(WorkTextResult {
                 text,
                 source,
@@ -507,7 +569,7 @@ pub async fn poll_zotero_for_work(
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
     for _ in 0..55 {
-        if let Some((bytes, source)) = try_zotero(zotero, doi, title).await? {
+        if let Some((bytes, source, _zotero_key)) = try_zotero(zotero, doi, title).await? {
             let text = extract_text(&bytes)?;
             return Ok(WorkTextResult {
                 text,

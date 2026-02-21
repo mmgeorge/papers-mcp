@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64.workspace = true
 papers-openalex.workspace = true
 papers-zotero.workspace = true
 papers-datalab.workspace = true

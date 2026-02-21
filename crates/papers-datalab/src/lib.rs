@@ -18,7 +18,7 @@
 //! let result = client.convert_document(MarkerRequest {
 //!     file: Some(pdf_bytes),
 //!     filename: Some("paper.pdf".into()),
-//!     output_format: OutputFormat::Markdown,
+//!     output_format: vec![OutputFormat::Markdown],
 //!     mode: ProcessingMode::Accurate,
 //!     ..Default::default()
 //! }).await?;

@@ -41,8 +41,8 @@ pub struct MarkerRequest {
     pub filename: Option<String>,
     /// Public URL to the file. Alternative to `file`.
     pub file_url: Option<String>,
-    /// Output format. Defaults to `Markdown`.
-    pub output_format: OutputFormat,
+    /// Output format(s). Defaults to `[Markdown]`.
+    pub output_format: Vec<OutputFormat>,
     /// Processing mode. Defaults to `Balanced`.
     pub mode: ProcessingMode,
     /// Maximum number of pages to process.
@@ -85,7 +85,7 @@ impl Default for MarkerRequest {
             file: None,
             filename: None,
             file_url: None,
-            output_format: OutputFormat::default(),
+            output_format: vec![OutputFormat::Markdown],
             mode: ProcessingMode::default(),
             max_pages: None,
             page_range: None,
@@ -112,6 +112,7 @@ impl Default for MarkerRequest {
 /// Response from POST /api/v1/marker (submit).
 #[derive(serde::Deserialize)]
 pub struct MarkerSubmitResponse {
+    #[serde(default)]
     pub success: bool,
     pub request_id: String,
     pub request_check_url: String,
@@ -122,6 +123,7 @@ pub struct MarkerSubmitResponse {
 /// Response from GET /api/v1/marker/{request_id} (poll).
 #[derive(serde::Deserialize)]
 pub struct MarkerPollResponse {
+    #[serde(default)]
     pub success: bool,
     pub status: MarkerStatus,
     pub output_format: Option<String>,
