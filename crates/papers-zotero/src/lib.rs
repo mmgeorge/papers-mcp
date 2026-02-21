@@ -44,8 +44,9 @@
 //!
 //! # Endpoints
 //!
-//! The client provides 25+ methods covering all Zotero read endpoints:
+//! The client provides 40+ methods covering all Zotero read and write endpoints:
 //!
+//! **Read:**
 //! - **9 item endpoints** — list/get items, top items, trash, children,
 //!   collection items, publication items, file download, file view, file URL
 //! - **4 collection endpoints** — list/get collections, top, subcollections
@@ -57,6 +58,14 @@
 //! - **2 settings endpoints** — get all settings, get single setting
 //! - **1 group endpoint** — list user groups
 //! - **2 key endpoints** — get API key info by value or by current request
+//!
+//! **Write:**
+//! - **5 item write endpoints** — create, update (PUT), patch (PATCH),
+//!   delete single, delete multiple
+//! - **4 collection write endpoints** — create, update, delete single,
+//!   delete multiple
+//! - **2 search write endpoints** — create, delete multiple
+//! - **1 tag write endpoint** — delete multiple tags
 
 pub mod cache;
 pub mod client;

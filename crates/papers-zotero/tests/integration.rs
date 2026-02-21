@@ -4,16 +4,15 @@ use papers_zotero::{
 
 fn client() -> ZoteroClient {
     let user_id =
-        std::env::var("ZOTERO_USER_ID").expect("ZOTERO_USER_ID must be set for live tests");
+        std::env::var("ZOTERO_TEST_USER_ID").expect("ZOTERO_TEST_USER_ID must be set for live tests");
     let api_key =
-        std::env::var("ZOTERO_API_KEY").expect("ZOTERO_API_KEY must be set for live tests");
+        std::env::var("ZOTERO_TEST_API_KEY").expect("ZOTERO_TEST_API_KEY must be set for live tests");
     ZoteroClient::new(user_id, api_key)
 }
 
 // ── Live item tests ──────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_items() {
     let params = ItemListParams::builder().limit(1).build();
     let resp = client().list_items(&params).await.unwrap();
@@ -22,7 +21,6 @@ async fn test_live_list_items() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_top_items() {
     let params = ItemListParams::builder().limit(1).build();
     let resp = client().list_top_items(&params).await.unwrap();
@@ -31,7 +29,6 @@ async fn test_live_list_top_items() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_trash_items() {
     let params = ItemListParams::builder().limit(1).build();
     let resp = client().list_trash_items(&params).await.unwrap();
@@ -40,7 +37,6 @@ async fn test_live_list_trash_items() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_item() {
     // First list to get a key, then get that item
     let params = ItemListParams::builder().limit(1).build();
@@ -52,7 +48,6 @@ async fn test_live_get_item() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_item_children() {
     // Find an item that has children
     let params = ItemListParams::builder()
@@ -74,7 +69,6 @@ async fn test_live_list_item_children() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_search_items() {
     let params = ItemListParams::builder().q("rendering").limit(5).build();
     let resp = client().list_items(&params).await.unwrap();
@@ -82,7 +76,6 @@ async fn test_live_search_items() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_search_xz_ordering() {
     let zotero = client();
 
@@ -134,7 +127,6 @@ async fn test_live_search_xz_ordering() {
 // ── Live collection tests ────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_collections() {
     let params = CollectionListParams::builder().limit(5).build();
     let resp = client().list_collections(&params).await.unwrap();
@@ -143,7 +135,6 @@ async fn test_live_list_collections() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_top_collections() {
     let resp = client()
         .list_top_collections(&CollectionListParams::default())
@@ -153,7 +144,6 @@ async fn test_live_list_top_collections() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_collection() {
     let list_resp = client()
         .list_collections(&CollectionListParams::builder().limit(1).build())
@@ -166,7 +156,6 @@ async fn test_live_get_collection() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_collection_items() {
     let list_resp = client()
         .list_collections(&CollectionListParams::builder().limit(1).build())
@@ -184,7 +173,6 @@ async fn test_live_list_collection_items() {
 // ── Live tag tests ───────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_tags() {
     let params = TagListParams::builder().limit(5).build();
     let resp = client().list_tags(&params).await.unwrap();
@@ -194,7 +182,6 @@ async fn test_live_list_tags() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_items_tags() {
     let resp = client()
         .list_items_tags(&TagListParams::builder().limit(5).build())
@@ -206,7 +193,6 @@ async fn test_live_list_items_tags() {
 // ── Live search tests ────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_searches() {
     let resp = client().list_searches().await.unwrap();
     // May be empty if no saved searches
@@ -216,7 +202,6 @@ async fn test_live_list_searches() {
 // ── Live group tests ─────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_groups() {
     let resp = client().list_groups().await.unwrap();
     // May be empty if user has no groups
@@ -226,14 +211,12 @@ async fn test_live_list_groups() {
 // ── Live key info test ───────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_key_info() {
     let info = client().get_key_info().await.unwrap();
     assert!(info.get("userID").is_some() || info.get("key").is_some());
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_current_key_info() {
     let info = client().get_current_key_info().await.unwrap();
     assert!(info.get("userID").is_some());
@@ -244,7 +227,6 @@ async fn test_live_current_key_info() {
 // ── Live full-text tests ─────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_fulltext_versions() {
     let resp = client()
         .list_fulltext_versions(&FulltextParams::default())
@@ -261,7 +243,6 @@ async fn test_live_list_fulltext_versions() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_list_fulltext_versions_since() {
     // First get the current library version
     let all = client()
@@ -278,7 +259,6 @@ async fn test_live_list_fulltext_versions_since() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_item_fulltext() {
     // Find an attachment key from the fulltext index
     let versions = client()
@@ -298,7 +278,6 @@ async fn test_live_get_item_fulltext() {
 // ── Live deleted test ────────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_deleted() {
     let params = DeletedParams::builder().since(0u64).build();
     let resp = client().get_deleted(&params).await.unwrap();
@@ -314,7 +293,6 @@ async fn test_live_get_deleted() {
 // ── Live settings tests ──────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_settings() {
     let resp = client().get_settings().await.unwrap();
     assert!(resp.last_modified_version.is_some());
@@ -326,7 +304,6 @@ async fn test_live_get_settings() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_setting_tag_colors() {
     let resp = client().get_setting("tagColors").await.unwrap();
     assert!(resp.last_modified_version.is_some());
@@ -342,7 +319,6 @@ async fn test_live_get_setting_tag_colors() {
 // ── Live file view tests ─────────────────────────────────────────────
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_item_file_view_url() {
     // Find an imported_file attachment
     let versions = client()
@@ -355,7 +331,6 @@ async fn test_live_get_item_file_view_url() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_live_get_item_file_view() {
     let versions = client()
         .list_fulltext_versions(&FulltextParams::default())

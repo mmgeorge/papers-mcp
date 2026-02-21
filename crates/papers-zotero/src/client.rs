@@ -854,6 +854,328 @@ impl ZoteroClient {
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
 
+    // ── Write helpers ──────────────────────────────────────────────────
+
+    /// POST a JSON body, expecting a `200 OK` with a [`WriteResponse`] body.
+    async fn post_json_write(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<WriteResponse> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .http
+            .post(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        let text = resp.text().await?;
+        serde_json::from_str(&text).map_err(ZoteroError::Json)
+    }
+
+    /// PUT a JSON body to a single-object path, expecting `204 No Content`.
+    /// Requires `If-Unmodified-Since-Version` for optimistic concurrency.
+    async fn put_no_content(
+        &self,
+        path: &str,
+        version: u64,
+        body: &serde_json::Value,
+    ) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .http
+            .put(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("Content-Type", "application/json")
+            .header("If-Unmodified-Since-Version", version.to_string())
+            .json(body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        Ok(())
+    }
+
+    /// PATCH a JSON body to a single-object path, expecting `204 No Content`.
+    /// Requires `If-Unmodified-Since-Version` for optimistic concurrency.
+    async fn patch_no_content(
+        &self,
+        path: &str,
+        version: u64,
+        body: &serde_json::Value,
+    ) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .http
+            .patch(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("Content-Type", "application/json")
+            .header("If-Unmodified-Since-Version", version.to_string())
+            .json(body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        Ok(())
+    }
+
+    /// DELETE a single resource by path, expecting `204 No Content`.
+    /// Requires `If-Unmodified-Since-Version` for optimistic concurrency.
+    async fn delete_no_content(&self, path: &str, version: u64) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        let resp = self
+            .http
+            .delete(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("If-Unmodified-Since-Version", version.to_string())
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        Ok(())
+    }
+
+    /// DELETE multiple resources by appending a query parameter, expecting
+    /// `204 No Content`. The `library_version` goes in
+    /// `If-Unmodified-Since-Version`.
+    async fn delete_multiple_no_content(
+        &self,
+        path: &str,
+        query_key: &str,
+        values: &[String],
+        library_version: u64,
+    ) -> Result<()> {
+        let url = format!("{}{}", self.base_url, path);
+        let joined = values.join(",");
+        let resp = self
+            .http
+            .delete(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("If-Unmodified-Since-Version", library_version.to_string())
+            .query(&[(query_key, &joined)])
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        Ok(())
+    }
+
+    // ── Item write endpoints ───────────────────────────────────────────
+
+    /// Create one or more items.
+    ///
+    /// `POST /users/<id>/items`
+    ///
+    /// Each element of `items` must be a JSON object containing at least
+    /// `itemType`. Returns a [`WriteResponse`] with `successful`, `unchanged`,
+    /// and `failed` maps keyed by the input array index.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example() -> papers_zotero::Result<()> {
+    /// use papers_zotero::ZoteroClient;
+    /// use serde_json::json;
+    ///
+    /// let client = ZoteroClient::from_env()?;
+    /// let result = client.create_items(vec![
+    ///     json!({ "itemType": "note", "note": "Hello from Rust" })
+    /// ]).await?;
+    /// println!("created keys: {:?}", result.successful_keys());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn create_items(&self, items: Vec<serde_json::Value>) -> Result<WriteResponse> {
+        let path = format!("{}/items", self.user_prefix());
+        self.post_json_write(&path, &serde_json::Value::Array(items)).await
+    }
+
+    /// Fully replace a single item.
+    ///
+    /// `PUT /users/<id>/items/<key>`
+    ///
+    /// `version` must match the item's current version; pass the value from
+    /// a prior `get_item` call. Returns `412 Precondition Failed` if the item
+    /// has been modified since.
+    pub async fn update_item(
+        &self,
+        key: &str,
+        version: u64,
+        data: serde_json::Value,
+    ) -> Result<()> {
+        let path = format!("{}/items/{}", self.user_prefix(), key);
+        self.put_no_content(&path, version, &data).await
+    }
+
+    /// Partially update a single item (only supply changed fields).
+    ///
+    /// `PATCH /users/<id>/items/<key>`
+    ///
+    /// `version` must match the item's current version.
+    pub async fn patch_item(
+        &self,
+        key: &str,
+        version: u64,
+        data: serde_json::Value,
+    ) -> Result<()> {
+        let path = format!("{}/items/{}", self.user_prefix(), key);
+        self.patch_no_content(&path, version, &data).await
+    }
+
+    /// Delete a single item.
+    ///
+    /// `DELETE /users/<id>/items/<key>`
+    ///
+    /// `version` must match the item's current version.
+    pub async fn delete_item(&self, key: &str, version: u64) -> Result<()> {
+        let path = format!("{}/items/{}", self.user_prefix(), key);
+        self.delete_no_content(&path, version).await
+    }
+
+    /// Delete multiple items in a single request.
+    ///
+    /// `DELETE /users/<id>/items?itemKey=<key>,<key>,...`
+    ///
+    /// `library_version` must be the current library version (from a prior
+    /// list or write response).
+    pub async fn delete_items(&self, keys: &[String], library_version: u64) -> Result<()> {
+        let path = format!("{}/items", self.user_prefix());
+        self.delete_multiple_no_content(&path, "itemKey", keys, library_version).await
+    }
+
+    // ── Collection write endpoints ─────────────────────────────────────
+
+    /// Create one or more collections.
+    ///
+    /// `POST /users/<id>/collections`
+    ///
+    /// Each element must contain at least `name`. Optionally include
+    /// `parentCollection` (key string) for nested collections.
+    pub async fn create_collections(
+        &self,
+        collections: Vec<serde_json::Value>,
+    ) -> Result<WriteResponse> {
+        let path = format!("{}/collections", self.user_prefix());
+        self.post_json_write(&path, &serde_json::Value::Array(collections)).await
+    }
+
+    /// Fully replace a single collection.
+    ///
+    /// `PUT /users/<id>/collections/<key>`
+    pub async fn update_collection(
+        &self,
+        key: &str,
+        version: u64,
+        data: serde_json::Value,
+    ) -> Result<()> {
+        let path = format!("{}/collections/{}", self.user_prefix(), key);
+        self.put_no_content(&path, version, &data).await
+    }
+
+    /// Delete a single collection.
+    ///
+    /// `DELETE /users/<id>/collections/<key>`
+    pub async fn delete_collection(&self, key: &str, version: u64) -> Result<()> {
+        let path = format!("{}/collections/{}", self.user_prefix(), key);
+        self.delete_no_content(&path, version).await
+    }
+
+    /// Delete multiple collections in a single request.
+    ///
+    /// `DELETE /users/<id>/collections?collectionKey=<key>,<key>,...`
+    pub async fn delete_collections(
+        &self,
+        keys: &[String],
+        library_version: u64,
+    ) -> Result<()> {
+        let path = format!("{}/collections", self.user_prefix());
+        self.delete_multiple_no_content(&path, "collectionKey", keys, library_version).await
+    }
+
+    // ── Search write endpoints ─────────────────────────────────────────
+
+    /// Create one or more saved searches.
+    ///
+    /// `POST /users/<id>/searches`
+    ///
+    /// Each element must contain `name` and `conditions` (array of
+    /// `{condition, operator, value}` objects).
+    pub async fn create_searches(
+        &self,
+        searches: Vec<serde_json::Value>,
+    ) -> Result<WriteResponse> {
+        let path = format!("{}/searches", self.user_prefix());
+        self.post_json_write(&path, &serde_json::Value::Array(searches)).await
+    }
+
+    /// Delete multiple saved searches in a single request.
+    ///
+    /// `DELETE /users/<id>/searches?searchKey=<key>,<key>,...`
+    pub async fn delete_searches(
+        &self,
+        keys: &[String],
+        library_version: u64,
+    ) -> Result<()> {
+        let path = format!("{}/searches", self.user_prefix());
+        self.delete_multiple_no_content(&path, "searchKey", keys, library_version).await
+    }
+
+    // ── Tag write endpoints ────────────────────────────────────────────
+
+    /// Delete multiple tags from the library.
+    ///
+    /// `DELETE /users/<id>/tags?tag=<tag1> || <tag2> || ...`
+    ///
+    /// Tags are URL-encoded and joined with ` || `.
+    pub async fn delete_tags(&self, tags: &[String], library_version: u64) -> Result<()> {
+        let path = format!("{}/tags", self.user_prefix());
+        let url = format!("{}{}", self.base_url, path);
+        let tag_param = tags
+            .iter()
+            .map(|t| urlencoded(t))
+            .collect::<Vec<_>>()
+            .join(" || ");
+        let resp = self
+            .http
+            .delete(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("If-Unmodified-Since-Version", library_version.to_string())
+            .query(&[("tag", &tag_param)])
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        Ok(())
+    }
+
     // ── Key info endpoint ──────────────────────────────────────────────
 
     /// Get information about the current API key.

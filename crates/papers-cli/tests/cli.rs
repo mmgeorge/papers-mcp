@@ -2854,3 +2854,129 @@ async fn test_zotero_collection_hierarchy_navigation() {
     assert!(titles.contains(&"Paper A"));
     assert!(titles.contains(&"Paper B"));
 }
+
+// ── Zotero work extract tests ─────────────────────────────────────────────
+
+/// `looks_like_zotero_key` accepts exactly 8 uppercase alphanumeric chars.
+#[test]
+fn test_looks_like_zotero_key_valid() {
+    assert!(papers_core::zotero::looks_like_zotero_key("U9PRIZJ7"));
+    assert!(papers_core::zotero::looks_like_zotero_key("ABCD1234"));
+    assert!(papers_core::zotero::looks_like_zotero_key("12345678"));
+    assert!(papers_core::zotero::looks_like_zotero_key("AAAAAAAA"));
+}
+
+/// `looks_like_zotero_key` rejects strings that are not exactly 8 uppercase alphanum.
+#[test]
+fn test_looks_like_zotero_key_invalid() {
+    // lowercase
+    assert!(!papers_core::zotero::looks_like_zotero_key("abcd1234"));
+    // too short
+    assert!(!papers_core::zotero::looks_like_zotero_key("ABCD123"));
+    // too long
+    assert!(!papers_core::zotero::looks_like_zotero_key("ABCD12345"));
+    // contains space
+    assert!(!papers_core::zotero::looks_like_zotero_key("ABCD 234"));
+    // contains hyphen
+    assert!(!papers_core::zotero::looks_like_zotero_key("ABCD-234"));
+    // title / search string
+    assert!(!papers_core::zotero::looks_like_zotero_key("vertex block descent"));
+    // empty
+    assert!(!papers_core::zotero::looks_like_zotero_key(""));
+}
+
+/// `resolve_item_key` returns the input immediately when it looks like a Zotero key,
+/// making no HTTP requests (the mock server would 404 on any request).
+#[tokio::test]
+async fn test_resolve_item_key_exact_key_no_http() {
+    let mock = MockServer::start().await;
+    // No mock routes registered — any HTTP request would return 501/404.
+    let client = make_zotero_client(&mock);
+
+    let result = papers_core::zotero::resolve_item_key(&client, "U9PRIZJ7").await;
+    assert_eq!(result.unwrap(), "U9PRIZJ7");
+}
+
+/// `resolve_item_key` issues a search when given a non-key string and returns the
+/// first match's key.
+#[tokio::test]
+async fn test_resolve_item_key_search_string() {
+    let mock = MockServer::start().await;
+    let body = r#"[{"key":"SRCHKEY1","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"SRCHKEY1","version":1,"itemType":"journalArticle","title":"Vertex Block Descent"}}]"#;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "1")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(body),
+        )
+        .mount(&mock)
+        .await;
+
+    let client = make_zotero_client(&mock);
+    let result = papers_core::zotero::resolve_item_key(&client, "vertex block descent").await;
+    assert_eq!(result.unwrap(), "SRCHKEY1");
+}
+
+/// `resolve_item_key` returns an error when the search yields no results.
+#[tokio::test]
+async fn test_resolve_item_key_no_results() {
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(zotero_arr_empty())
+        .mount(&mock)
+        .await;
+
+    let client = make_zotero_client(&mock);
+    let result = papers_core::zotero::resolve_item_key(&client, "nonexistent paper title").await;
+    assert!(result.is_err(), "should error when no results found");
+}
+
+/// When the input is not an exact key, `list_top_items` with limit 5 returns
+/// multiple results — these would be presented as "Did you mean?" suggestions.
+/// This test verifies the mock data structure and that multiple items are returned.
+#[tokio::test]
+async fn test_extract_ambiguous_search_returns_multiple_items() {
+    let mock = MockServer::start().await;
+    let body = r#"[
+        {"key":"WORK0001","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK0001","version":1,"itemType":"journalArticle","title":"GPU Sorting Paper"}},
+        {"key":"WORK0002","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK0002","version":1,"itemType":"journalArticle","title":"GPU Rendering Paper"}},
+        {"key":"WORK0003","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"WORK0003","version":1,"itemType":"journalArticle","title":"GPU Memory Management"}}
+    ]"#;
+    Mock::given(method("GET"))
+        .and(path("/users/test/items/top"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Total-Results", "3")
+                .insert_header("Last-Modified-Version", "100")
+                .set_body_string(body),
+        )
+        .mount(&mock)
+        .await;
+
+    let client = make_zotero_client(&mock);
+    // Mirrors what the CLI does: search with limit 5 when input is ambiguous.
+    let params = ItemListParams::builder().q("gpu").limit(5).build();
+    let results = client.list_top_items(&params).await.unwrap();
+
+    assert_eq!(results.items.len(), 3, "all three matches returned");
+    let keys: Vec<&str> = results.items.iter().map(|i| i.key.as_str()).collect();
+    assert!(keys.contains(&"WORK0001"));
+    assert!(keys.contains(&"WORK0002"));
+    assert!(keys.contains(&"WORK0003"));
+
+    // Verify each item has a title (for Did you mean? display)
+    for item in &results.items {
+        assert!(item.data.title.is_some(), "each suggestion should have a title");
+    }
+}
+
+/// `datalab_cached_markdown` returns `None` for a key that has no cache entry.
+#[test]
+fn test_datalab_cached_markdown_miss() {
+    // Use a key that should never exist in the cache.
+    let result = papers_core::text::datalab_cached_markdown("TSTMISSXX");
+    assert!(result.is_none(), "unknown key should return None");
+}

@@ -113,7 +113,7 @@ impl Default for MarkerRequest {
 #[derive(serde::Deserialize)]
 pub struct MarkerSubmitResponse {
     #[serde(default)]
-    pub success: bool,
+    pub success: Option<bool>,
     pub request_id: String,
     pub request_check_url: String,
 }
@@ -124,7 +124,7 @@ pub struct MarkerSubmitResponse {
 #[derive(serde::Deserialize)]
 pub struct MarkerPollResponse {
     #[serde(default)]
-    pub success: bool,
+    pub success: Option<bool>,
     pub status: MarkerStatus,
     pub output_format: Option<String>,
     pub markdown: Option<String>,

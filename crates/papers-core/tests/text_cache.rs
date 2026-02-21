@@ -115,3 +115,31 @@ async fn test_datalab_cache_miss_then_hit() {
     );
     eprintln!("[test] Cache hit took {:?}", cache_duration);
 }
+
+/// Verify the cached markdown for U9PRIZJ7 starts with expected paper content.
+/// This test uses the on-disk cache written by `test_datalab_cache_miss_then_hit`
+/// and does not make any network calls.
+#[tokio::test]
+async fn test_cached_markdown_content() {
+    let md_path = cache_dir().join(format!("{}.md", ZOTERO_ITEM_KEY));
+    if !md_path.exists() {
+        eprintln!("[test] cache not populated yet — run test_datalab_cache_miss_then_hit first");
+        return;
+    }
+
+    let markdown = std::fs::read_to_string(&md_path).expect("failed to read cached markdown");
+    let first_lines: Vec<&str> = markdown.lines().take(10).collect();
+
+    eprintln!("[test] First 10 lines of cached markdown:");
+    for line in &first_lines {
+        eprintln!("  {line}");
+    }
+
+    assert!(!markdown.is_empty(), "cached markdown is empty");
+    // The paper title should appear near the top
+    let header = first_lines.join(" ").to_lowercase();
+    assert!(
+        header.contains("augmented") || header.contains("vertex") || header.contains("block"),
+        "expected paper title keywords in first 10 lines, got: {header:?}"
+    );
+}

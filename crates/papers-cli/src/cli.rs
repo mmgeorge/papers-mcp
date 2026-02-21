@@ -803,6 +803,15 @@ pub enum ZoteroWorkCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Extract full text from a work's PDF using DataLab Marker (requires DATALAB_API_KEY).
+    /// Results are cached locally; subsequent calls return instantly.
+    Extract {
+        /// Item key (e.g. LF4MJWZK) or a title/creator search string
+        key: String,
+        /// Quality level: fast, balanced (default), or accurate
+        #[arg(long, short = 'm', default_value = "balanced")]
+        mode: AdvancedMode,
+    },
     /// Get the CDN view URL for a work's primary PDF attachment
     ViewUrl {
         /// Item key (e.g. LF4MJWZK) or a title/creator search string

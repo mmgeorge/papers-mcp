@@ -7,6 +7,7 @@ pub mod item;
 pub mod search;
 pub mod settings;
 pub mod tag;
+pub mod write;
 
 pub use collection::{Collection, CollectionData, CollectionMeta};
 pub use common::{Creator, ItemTag, Library, LinkEntry};
@@ -17,3 +18,4 @@ pub use item::{Item, ItemData, ItemMeta};
 pub use search::{SavedSearch, SearchCondition, SearchData};
 pub use settings::SettingEntry;
 pub use tag::{Tag, TagMeta};
+pub use write::{WriteFailed, WriteResponse};

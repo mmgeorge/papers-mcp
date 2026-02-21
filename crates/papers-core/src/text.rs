@@ -110,6 +110,12 @@ fn datalab_cache_dir(short_id: &str) -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("papers").join("datalab").join(short_id))
 }
 
+/// Return the cached markdown for `cache_id` if it exists, otherwise `None`.
+pub fn datalab_cached_markdown(cache_id: &str) -> Option<String> {
+    let dir = datalab_cache_dir(cache_id)?;
+    std::fs::read_to_string(dir.join(format!("{cache_id}.md"))).ok()
+}
+
 /// Collect all pdf_url values from an OpenAlex Work's locations.
 fn collect_pdf_urls(work: &Work) -> Vec<String> {
     let mut urls = Vec::new();

@@ -15,31 +15,54 @@ This crate is a Rust API client for the [Zotero Web API v3](https://www.zotero.o
 
 ## How This Crate Was Derived
 
-1. The API was explored via live `curl` calls against a real user library
+1. The API was explored via live calls against a real user library
 2. Every endpoint was tested to verify response shapes, header behavior, and pagination
 3. Results were codified into `api-spec.toml` as documentation
 4. Type structs were derived from actual JSON responses
 
 ## Architecture
 
-- `api-spec.toml` — Documented API specification: endpoints, parameters, response types
-- `src/client.rs` — `ZoteroClient` struct with 25+ public methods (one per endpoint)
-- `src/types/` — Serde-deserializable Rust structs for items, collections, tags, searches, groups
+- `api-spec.toml` — Documented API specification: endpoints, parameters, response types (read and write)
+- `src/client.rs` — `ZoteroClient` struct with 40+ public methods (one per endpoint)
+- `src/types/` — Serde-deserializable Rust structs for all response and write types
 - `src/params.rs` — Parameter structs with `#[derive(Default, bon::Builder)]`
-- `src/response.rs` — `PagedResponse<T>` wrapper combining array body + header metadata
+- `src/response.rs` — `PagedResponse<T>` and `VersionedResponse<T>` wrappers
 - `src/cache.rs` — `DiskCache` identical to papers-openalex
 - `src/error.rs` — Error types for HTTP, JSON, and API errors
 - `tests/fixtures/` — JSON response fixtures captured from the live API
 
 ## Entity Types
 
-| Entity | List | Get | Type file |
-|------------|------|-----|-----------|
-| Item | Yes (8 endpoints) | Yes | `types/item.rs` |
-| Collection | Yes (3 endpoints) | Yes | `types/collection.rs` |
-| Tag | Yes (10 endpoints) | Yes (returns array) | `types/tag.rs` |
-| SavedSearch | Yes | Yes | `types/search.rs` |
-| Group | Yes | No | `types/group.rs` |
+| Entity | List | Get | Write | Type file |
+|------------|------|-----|-------|-----------|
+| Item | Yes (8 endpoints) | Yes | create, update, patch, delete | `types/item.rs` |
+| Collection | Yes (3 endpoints) | Yes | create, update, delete | `types/collection.rs` |
+| Tag | Yes (10 endpoints) | Yes (returns array) | delete | `types/tag.rs` |
+| SavedSearch | Yes | Yes | create, delete | `types/search.rs` |
+| Group | Yes | No | — | `types/group.rs` |
+
+Write operations return `WriteResponse` (creates) or `()` (updates/deletes). See `types/write.rs`.
+
+## Credentials & Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `ZOTERO_USER_ID` | Production library user ID |
+| `ZOTERO_API_KEY` | Production library API key |
+| `ZOTERO_TEST_USER_ID` | Dedicated test library user ID (used by integration tests and scripts) |
+| `ZOTERO_TEST_API_KEY` | Dedicated test library API key (write access) |
+
+Integration tests (`tests/integration.rs`) always use `ZOTERO_TEST_USER_ID` / `ZOTERO_TEST_API_KEY`.
+The production key (`ZOTERO_API_KEY`) is never used in tests.
+
+## Scripts
+
+Scripts live in `scripts/` at the repo root:
+
+- **`zotero.ps1`** — GET explorer. Pass a path relative to `/users/<id>` and it is called against the test library. E.g.: `.\scripts\zotero.ps1 /items/top?limit=2`
+- **`zotero-write.ps1`** — End-to-end write test. Creates items, collections, and a saved search; patches/PUTs some of them; then deletes everything and verifies the library is empty.
+
+Both scripts read `ZOTERO_TEST_API_KEY` and `ZOTERO_TEST_USER_ID` from the user environment.
 
 ## How to Update When the API Changes
 
@@ -47,19 +70,20 @@ This crate is a Rust API client for the [Zotero Web API v3](https://www.zotero.o
 Visit https://www.zotero.org/support/dev/web_api/v3/start and compare against `api-spec.toml`.
 
 ### Step 2: Verify against live API
-```
-curl -s -H "Zotero-API-Version: 3" -H "Zotero-API-Key: $KEY" \
-  "https://api.zotero.org/users/16916553/items?limit=1" -D -
+Use the `zotero.ps1` script:
+```powershell
+.\scripts\zotero.ps1 /items?limit=1
 ```
 
 ### Step 3: Update Rust code
 - New/changed entity fields → update structs in `src/types/*.rs`
-- New endpoints → add methods to `src/client.rs`
+- New read endpoints → add methods to `src/client.rs` using existing `get_json_array` / `get_json_single` / `get_json_versioned` helpers
+- New write endpoints → add methods using `post_json_write` / `put_no_content` / `patch_no_content` / `delete_no_content` / `delete_multiple_no_content` helpers
 - New parameters → update structs in `src/params.rs`
 
 ### Step 4: Update tests
 - Add/update fixtures in `tests/fixtures/`
-- Add wiremock tests in `src/client.rs`
+- Add wiremock unit tests in `src/client.rs`
 - Add live integration tests in `tests/integration.rs`
 
 ## Error Types
@@ -88,12 +112,10 @@ Set `ZOTERO_CHECK_LAUNCHED=0` to disable this check and fall back silently to th
 
 ## Key Gotchas
 
+### Read
 - **Raw arrays:** Zotero returns `[...]` not `{results: [...]}`. List endpoints parse the body as a `Vec<T>`
 - **Pagination in headers:** `Total-Results` and `Last-Modified-Version` are HTTP response headers, not body fields
 - **`parentCollection` is `false`:** Top-level collections have `"parentCollection": false` (JSON boolean), not `null`. Use `serde_json::Value` to handle this
-- **Auth headers required:** Every request must include `Zotero-API-Version: 3` and `Zotero-API-Key: <key>` headers
-- **User-scoped paths:** All endpoints are prefixed with `/users/<id>` (or `/groups/<id>` for group libraries)
-- **Item type variance:** Different item types (journalArticle, book, attachment, note) have different fields. `ItemData` uses `#[serde(flatten)]` for extra fields
 - **Tag `get_tag` returns array:** `GET /tags/<name>` returns a JSON array (usually with 1 element), not a single object
 - **`publications/items/tags` quirk:** Returns ALL library tags, not just publication tags
 - **Creator formats:** Creators use either `firstName`+`lastName` or a single `name` field (institutional authors)
@@ -101,3 +123,11 @@ Set `ZOTERO_CHECK_LAUNCHED=0` to disable this check and fall back silently to th
 - **`format=versions`:** Returns `{key: version}` JSON object, not array
 - **Tag `Total-Results` is 0:** The tags endpoint returns `Total-Results: 0` in the header even when the body contains results. Do not rely on `total_results` for tag counts
 - **Cache stores headers:** Because pagination info is in headers, the cache wraps body + header metadata together
+
+### Write
+- **Auth headers required:** Every request must include `Zotero-API-Version: 3` and `Zotero-API-Key: <key>`
+- **`If-Unmodified-Since-Version`:** Required on PUT, PATCH, and DELETE. For single-object operations pass the item/collection version; for multi-delete pass the library version. Returns `412 Precondition Failed` if stale.
+- **`WriteResponse` index keys are strings:** `successful["0"]`, `successful["1"]`, etc. — not integers
+- **Creates return full objects:** `successful` values are complete saved objects with server-assigned keys and versions
+- **Max 50 objects per POST:** The API rejects batches larger than 50 items
+- **Tag delete encoding:** Tags are URL-encoded and joined with ` || ` (space-pipe-pipe-space) in the query parameter

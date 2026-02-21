@@ -1,15 +1,20 @@
-# Zotero Web API v3 — Read Endpoint Specification
+# Zotero Web API v3 — Endpoint Specification
 #
 # Base URL: https://api.zotero.org
 # All user endpoints prefixed with: /users/<userID>
 # All group endpoints prefixed with: /groups/<groupID>
 #
-# Required headers:
+# Required headers (all requests):
 #   Zotero-API-Version: 3
 #   Zotero-API-Key: <key>
 #
-# Response format: raw JSON arrays [...] with pagination in HTTP headers
+# Read responses: raw JSON arrays [...] with pagination in HTTP headers
 # Headers: Total-Results, Last-Modified-Version, Link (rel=next/last)
+#
+# Write responses: 200 with WriteResponse body (creates), 204 No Content (updates/deletes)
+# Write requests require Content-Type: application/json (creates/puts/patches)
+# Write requests require If-Unmodified-Since-Version: <version> (puts/patches/deletes)
+# Precondition failure returns 412 Precondition Failed.
 #
 # Verified against live API (user 16916553) on 2026-02-21.
 
@@ -232,6 +237,99 @@ returns = "String (plain URL)"
 note = """Returns 200 with the /file/view redirect target URL as a plain JSON string.
 Use this to obtain the CDN URL without following the redirect yourself."""
 
+# ── Item write endpoints ─────────────────────────────────────────────
+
+[endpoints.create_items]
+path = "/users/<id>/items"
+method = "POST"
+body = "Vec<ItemData> (JSON array)"
+returns = "WriteResponse"
+note = """Each object must include at minimum `itemType`.
+Optional: title, creators, tags, collections, relations, and any type-specific fields.
+Successful entries contain the saved Item objects; version numbers are assigned by the server.
+Maximum 50 objects per request."""
+
+[endpoints.update_item]
+path = "/users/<id>/items/<key>"
+method = "PUT"
+headers_required = ["If-Unmodified-Since-Version: <item version>", "Content-Type: application/json"]
+body = "Complete ItemData including key and version"
+returns = "204 No Content"
+note = "Full replacement. If-Unmodified-Since-Version must equal the item's current version."
+
+[endpoints.patch_item]
+path = "/users/<id>/items/<key>"
+method = "PATCH"
+headers_required = ["If-Unmodified-Since-Version: <item version>", "Content-Type: application/json"]
+body = "Partial ItemData (only changed fields)"
+returns = "204 No Content"
+note = "Partial update. Unspecified fields are left unchanged."
+
+[endpoints.delete_item]
+path = "/users/<id>/items/<key>"
+method = "DELETE"
+headers_required = ["If-Unmodified-Since-Version: <item version>"]
+returns = "204 No Content"
+
+[endpoints.delete_items]
+path = "/users/<id>/items?itemKey=<key1>,<key2>,..."
+method = "DELETE"
+headers_required = ["If-Unmodified-Since-Version: <library version>"]
+returns = "204 No Content"
+note = "If-Unmodified-Since-Version is the library version, not individual item versions."
+
+# ── Collection write endpoints ────────────────────────────────────────
+
+[endpoints.create_collections]
+path = "/users/<id>/collections"
+method = "POST"
+body = "Vec<{name, parentCollection?}>"
+returns = "WriteResponse"
+note = "parentCollection is a collection key string, or omit for top-level."
+
+[endpoints.update_collection]
+path = "/users/<id>/collections/<key>"
+method = "PUT"
+headers_required = ["If-Unmodified-Since-Version: <collection version>", "Content-Type: application/json"]
+body = "Complete CollectionData including key and version"
+returns = "204 No Content"
+
+[endpoints.delete_collection]
+path = "/users/<id>/collections/<key>"
+method = "DELETE"
+headers_required = ["If-Unmodified-Since-Version: <collection version>"]
+returns = "204 No Content"
+
+[endpoints.delete_collections]
+path = "/users/<id>/collections?collectionKey=<key1>,<key2>,..."
+method = "DELETE"
+headers_required = ["If-Unmodified-Since-Version: <library version>"]
+returns = "204 No Content"
+
+# ── Search write endpoints ────────────────────────────────────────────
+
+[endpoints.create_searches]
+path = "/users/<id>/searches"
+method = "POST"
+body = "Vec<{name, conditions: [{condition, operator, value}]}>"
+returns = "WriteResponse"
+note = "Each search requires name and conditions array."
+
+[endpoints.delete_searches]
+path = "/users/<id>/searches?searchKey=<key1>,<key2>,..."
+method = "DELETE"
+headers_required = ["If-Unmodified-Since-Version: <library version>"]
+returns = "204 No Content"
+
+# ── Tag write endpoints ───────────────────────────────────────────────
+
+[endpoints.delete_tags]
+path = "/users/<id>/tags?tag=<tag1> || <tag2> || ..."
+method = "DELETE"
+headers_required = ["If-Unmodified-Since-Version: <library version>"]
+returns = "204 No Content"
+note = "Tags are URL-encoded and joined with ' || ' (space-pipe-pipe-space)."
+
 # ── Tag endpoints ────────────────────────────────────────────────────
 
 [endpoints.list_tags]
@@ -369,4 +467,21 @@ description = "A single user setting value with its library version"
 fields = [
     { name = "value", type = "Any", description = "The setting value (type varies by key; tagColors is an array of {name, color} objects)" },
     { name = "version", type = "u64", description = "Library version when this setting was last modified" },
+]
+
+[types.WriteResponse]
+description = "Response from a write request (POST /items, POST /collections, POST /searches)"
+fields = [
+    { name = "successful", type = "Map<index, Item>", description = "Successfully created/updated objects keyed by input array index (0-based string)" },
+    { name = "unchanged", type = "Map<index, key>", description = "Objects with no changes needed, keyed by index; values are item keys" },
+    { name = "failed", type = "Map<index, WriteFailed>", description = "Objects that failed to save, keyed by index" },
+]
+note = "Index keys are strings (\"0\", \"1\", ...) corresponding to position in the input array."
+
+[types.WriteFailed]
+description = "Details of a single write failure within a WriteResponse"
+fields = [
+    { name = "key", type = "Option<String>", description = "The item key if known" },
+    { name = "code", type = "u16", description = "HTTP-style error code" },
+    { name = "message", type = "String", description = "Human-readable error description" },
 ]

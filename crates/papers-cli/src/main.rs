@@ -257,12 +257,15 @@ fn exit_err(msg: &str) -> ! {
 
 /// Find the first PDF attachment key for a given item key.
 async fn find_pdf_attachment_key(zotero: &ZoteroClient, item_key: &str) -> Result<String, String> {
+    Ok(find_pdf_attachment(zotero, item_key).await?.key)
+}
+
+async fn find_pdf_attachment(zotero: &ZoteroClient, item_key: &str) -> Result<Item, String> {
     let att_params = ItemListParams { item_type: Some("attachment".into()), ..Default::default() };
     let children = zotero.list_item_children(item_key, &att_params).await
         .map_err(|e| e.to_string())?;
-    children.items.iter()
+    children.items.into_iter()
         .find(|a| a.data.content_type.as_deref() == Some("application/pdf"))
-        .map(|a| a.key.clone())
         .ok_or_else(|| format!("No PDF attachment found for item {item_key}"))
 }
 
@@ -844,6 +847,57 @@ async fn main() {
                                 if json { print_json(&resp); } else { print!("{}", format::format_zotero_tag_list(&resp)); }
                             }
                             Err(e) => exit_err(&e.to_string()),
+                        }
+                    }
+                    ZoteroWorkCommand::Extract { key: input, mode } => {
+                        let is_exact_key = papers_core::zotero::looks_like_zotero_key(&input);
+
+                        // Resolve to a concrete item key.
+                        let key = resolve_item_key(&zotero, &input).await.unwrap_or_else(|e| exit_err(&e.to_string()));
+
+                        // Cache hit: return immediately regardless of how the key was specified.
+                        if let Some(markdown) = papers_core::text::datalab_cached_markdown(&key) {
+                            print!("{markdown}");
+                        } else {
+                            // Cache miss — if the user gave a search string (not an exact key),
+                            // error out with suggestions to avoid spending DataLab credits
+                            // on the wrong paper.
+                            if !is_exact_key {
+                                let matched = zotero
+                                    .list_top_items(&ItemListParams::builder().q(&input).limit(5).build())
+                                    .await
+                                    .unwrap_or_else(|e| exit_err(&e.to_string()));
+                                let mut msg = format!(
+                                    "Ambiguous search {:?} — use an exact item key. Did you mean:\n",
+                                    input
+                                );
+                                for item in &matched.items {
+                                    let title = item.data.title.as_deref().unwrap_or("(no title)");
+                                    msg.push_str(&format!("  papers zotero work extract {}: {}\n", item.key, title));
+                                }
+                                exit_err(&msg);
+                            }
+
+                            // Cache miss: read the PDF from local Zotero storage (no HTTP download).
+                            let att = find_pdf_attachment(&zotero, &key).await.unwrap_or_else(|e| exit_err(&e));
+                            let filename = att.data.filename.unwrap_or_else(|| exit_err("attachment has no filename"));
+                            let local_path = dirs::home_dir()
+                                .unwrap_or_else(|| exit_err("cannot determine home dir"))
+                                .join("Zotero").join("storage").join(&att.key).join(&filename);
+                            let pdf_bytes = std::fs::read(&local_path)
+                                .unwrap_or_else(|e| exit_err(&format!("failed to read {}: {e}", local_path.display())));
+
+                            let dl = papers_datalab::DatalabClient::from_env().unwrap_or_else(|e| exit_err(&e.to_string()));
+                            let processing_mode = match mode {
+                                AdvancedMode::Fast     => papers_core::text::ProcessingMode::Fast,
+                                AdvancedMode::Balanced => papers_core::text::ProcessingMode::Balanced,
+                                AdvancedMode::Accurate => papers_core::text::ProcessingMode::Accurate,
+                            };
+                            let mut source = papers_core::text::PdfSource::ZoteroLocal { path: local_path.to_string_lossy().into_owned() };
+                            match papers_core::text::do_extract(pdf_bytes, &key, Some((&dl, processing_mode)), &mut source).await {
+                                Ok(markdown) => print!("{markdown}"),
+                                Err(e) => exit_err(&e.to_string()),
+                            }
                         }
                     }
                     ZoteroWorkCommand::Text { key, json } => {

@@ -193,8 +193,15 @@ impl DatalabClient {
         }
 
         let body = resp.text().await?;
-        serde_json::from_str::<MarkerSubmitResponse>(&body)
-            .map_err(|e| DatalabError::Api { status: 0, message: format!("JSON parse error: {e}") })
+        let submit = serde_json::from_str::<MarkerSubmitResponse>(&body)
+            .map_err(|e| DatalabError::Api { status: 0, message: format!("JSON parse error: {e}") })?;
+        if submit.success == Some(false) {
+            return Err(DatalabError::Api {
+                status: 0,
+                message: "submit returned success=false".to_string(),
+            });
+        }
+        Ok(submit)
     }
 
     /// GET /api/v1/marker/{request_id} — poll for a single conversion result.

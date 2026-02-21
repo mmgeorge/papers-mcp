@@ -47,6 +47,7 @@ papers zotero work notes       <key> [-n <n>] [--json]
 papers zotero work attachments <key> [-n <n>] [--json]
 papers zotero work annotations <key> [--json]
 papers zotero work tags        <key> [-q <q>] [--json]
+papers zotero work extract     <key> [-m fast|balanced|accurate]
 
 papers zotero attachment list  [-s <q>] [--sort <f>] [-n <n>] [--json]
 papers zotero attachment get   <key> [--json]
@@ -125,6 +126,20 @@ Two helpers in `main.rs`:
 - `format_autocomplete` and `format_find_works` are shared across all entities
 - All list commands default to `per_page = 10`
 - `exit_err` in main.rs prints to stderr and exits with code 1
+
+## Running the CLI for testing
+
+Always run `target/debug/papers.exe` directly — never pass API keys on the command line or via
+`powershell.exe` env var lookups. All required keys (`ZOTERO_API_KEY`, `ZOTERO_USER_ID`,
+`DATALAB_API_KEY`, etc.) are already present in the shell environment.
+
+```
+# correct
+target/debug/papers.exe zotero work extract U9PRIZJ7
+
+# wrong — don't do this
+ZOTERO_API_KEY=$(powershell.exe -Command "...") target/debug/papers.exe ...
+```
 
 ## Key gotchas
 
