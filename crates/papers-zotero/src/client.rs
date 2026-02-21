@@ -2200,4 +2200,305 @@ mod tests {
             _ => panic!("Expected Api error"),
         }
     }
+
+    // ── Write fixtures ────────────────────────────────────────────────
+
+    fn item_write_response_json(key: &str) -> String {
+        format!(
+            r#"{{"successful":{{"0":{{"key":"{key}","version":1,"library":{{"type":"user","id":1,"name":"test","links":{{}}}},"links":{{}},"meta":{{}},"data":{{"key":"{key}","version":1,"itemType":"note","note":"test"}}}}}},"unchanged":{{}},"failed":{{}}}}"#
+        )
+    }
+
+    fn collection_write_response_json(key: &str) -> String {
+        format!(
+            r#"{{"successful":{{"0":{{"key":"{key}","version":1,"library":{{"type":"user","id":1,"name":"test","links":{{}}}},"links":{{}},"meta":{{"numCollections":0,"numItems":0}},"data":{{"key":"{key}","version":1,"name":"Test Collection","parentCollection":false,"relations":{{}}}}}}}},"unchanged":{{}},"failed":{{}}}}"#
+        )
+    }
+
+    fn search_write_response_json(key: &str) -> String {
+        format!(
+            r#"{{"successful":{{"0":{{"key":"{key}","version":1,"library":{{"type":"user","id":1,"name":"test","links":{{}}}},"links":{{}},"data":{{"key":"{key}","version":1,"name":"Test Search","conditions":[]}}}}}},"unchanged":{{}},"failed":{{}}}}"#
+        )
+    }
+
+    // ── Item write tests ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_create_items() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/users/12345/items"))
+            .and(header("Zotero-API-Version", "3"))
+            .and(header("Zotero-API-Key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(item_write_response_json("NEW12345"))
+                    .insert_header("Last-Modified-Version", "101"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client
+            .create_items(vec![serde_json::json!({"itemType": "note", "note": "test"})])
+            .await
+            .unwrap();
+        assert!(resp.is_ok());
+        assert_eq!(resp.successful_keys(), vec!["NEW12345"]);
+        assert!(resp.unchanged.is_empty());
+        assert!(resp.failed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_items_partial_failure() {
+        let server = MockServer::start().await;
+        let body = r#"{"successful":{"0":{"key":"OK123456","version":1,"library":{"type":"user","id":1,"name":"test","links":{}},"links":{},"meta":{},"data":{"key":"OK123456","version":1,"itemType":"note"}}},"unchanged":{},"failed":{"1":{"key":null,"code":400,"message":"Invalid item type"}}}"#;
+        Mock::given(method("POST"))
+            .and(path("/users/12345/items"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client
+            .create_items(vec![
+                serde_json::json!({"itemType": "note"}),
+                serde_json::json!({"itemType": "badType"}),
+            ])
+            .await
+            .unwrap();
+        assert!(!resp.is_ok());
+        assert_eq!(resp.successful.len(), 1);
+        assert_eq!(resp.failed.len(), 1);
+        assert_eq!(resp.failed["1"].code, 400);
+    }
+
+    #[tokio::test]
+    async fn test_update_item() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/users/12345/items/ABC12345"))
+            .and(header("If-Unmodified-Since-Version", "100"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .update_item("ABC12345", 100, serde_json::json!({"itemType": "note", "note": "updated"}))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_patch_item() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/users/12345/items/ABC12345"))
+            .and(header("If-Unmodified-Since-Version", "100"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .patch_item("ABC12345", 100, serde_json::json!({"note": "patched"}))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_item() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/users/12345/items/ABC12345"))
+            .and(header("If-Unmodified-Since-Version", "100"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client.delete_item("ABC12345", 100).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_items() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/users/12345/items"))
+            .and(query_param("itemKey", "ABC12345,DEF67890"))
+            .and(header("If-Unmodified-Since-Version", "200"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .delete_items(
+                &["ABC12345".to_string(), "DEF67890".to_string()],
+                200,
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_write_precondition_failed() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/users/12345/items/ABC12345"))
+            .respond_with(
+                ResponseTemplate::new(412).set_body_string("Precondition Failed"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client
+            .update_item("ABC12345", 99, serde_json::json!({"note": "stale"}))
+            .await
+            .unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 412),
+            _ => panic!("Expected Api error"),
+        }
+    }
+
+    // ── Collection write tests ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_create_collections() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/users/12345/collections"))
+            .and(header("Zotero-API-Version", "3"))
+            .and(header("Zotero-API-Key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(collection_write_response_json("NEWCOL01"))
+                    .insert_header("Last-Modified-Version", "102"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client
+            .create_collections(vec![serde_json::json!({"name": "My Collection"})])
+            .await
+            .unwrap();
+        assert!(resp.is_ok());
+        assert_eq!(resp.successful_keys(), vec!["NEWCOL01"]);
+    }
+
+    #[tokio::test]
+    async fn test_update_collection() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/users/12345/collections/COL12345"))
+            .and(header("If-Unmodified-Since-Version", "50"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .update_collection(
+                "COL12345",
+                50,
+                serde_json::json!({"key": "COL12345", "version": 50, "name": "New Name", "parentCollection": false}),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_collection() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/users/12345/collections/COL12345"))
+            .and(header("If-Unmodified-Since-Version", "50"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client.delete_collection("COL12345", 50).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_collections() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/users/12345/collections"))
+            .and(query_param("collectionKey", "COL12345,COL67890"))
+            .and(header("If-Unmodified-Since-Version", "200"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .delete_collections(
+                &["COL12345".to_string(), "COL67890".to_string()],
+                200,
+            )
+            .await
+            .unwrap();
+    }
+
+    // ── Search write tests ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_create_searches() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/users/12345/searches"))
+            .and(header("Zotero-API-Version", "3"))
+            .and(header("Zotero-API-Key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(search_write_response_json("SRCH0001"))
+                    .insert_header("Last-Modified-Version", "103"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client
+            .create_searches(vec![serde_json::json!({
+                "name": "My Search",
+                "conditions": [{"condition": "tag", "operator": "is", "value": "test"}]
+            })])
+            .await
+            .unwrap();
+        assert!(resp.is_ok());
+        assert_eq!(resp.successful_keys(), vec!["SRCH0001"]);
+    }
+
+    #[tokio::test]
+    async fn test_delete_searches() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/users/12345/searches"))
+            .and(query_param("searchKey", "SRCH0001,SRCH0002"))
+            .and(header("If-Unmodified-Since-Version", "200"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .delete_searches(
+                &["SRCH0001".to_string(), "SRCH0002".to_string()],
+                200,
+            )
+            .await
+            .unwrap();
+    }
+
+    // ── Tag write tests ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_delete_tags() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/users/12345/tags"))
+            .and(query_param("tag", "test-tag"))
+            .and(header("If-Unmodified-Since-Version", "200"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        client
+            .delete_tags(&["test-tag".to_string()], 200)
+            .await
+            .unwrap();
+    }
 }
