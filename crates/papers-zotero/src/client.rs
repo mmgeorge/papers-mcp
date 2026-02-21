@@ -1,9 +1,10 @@
 use crate::cache::DiskCache;
 use crate::error::{Result, ZoteroError};
-use crate::params::{CollectionListParams, ItemListParams, TagListParams};
-use crate::response::PagedResponse;
+use crate::params::{CollectionListParams, DeletedParams, FulltextParams, ItemListParams, TagListParams};
+use crate::response::{PagedResponse, VersionedResponse};
 use crate::types::*;
 use serde::de::DeserializeOwned;
+use std::collections::HashMap;
 
 const DEFAULT_BASE_URL: &str = "https://api.zotero.org";
 
@@ -282,6 +283,65 @@ impl ZoteroClient {
             cache.set(&url, &query, None, &text);
         }
         serde_json::from_str(&text).map_err(ZoteroError::Json)
+    }
+
+    /// GET request returning a single JSON object plus `Last-Modified-Version`.
+    ///
+    /// Used by endpoints that return one object (not an array) but still carry
+    /// the `Last-Modified-Version` sync header (fulltext, deleted, settings).
+    async fn get_json_versioned<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: Vec<(&str, String)>,
+    ) -> Result<VersionedResponse<T>> {
+        let url = format!("{}{}", self.base_url, path);
+        if let Some(cache) = &self.cache
+            && let Some(text) = cache.get(&url, &query, None)
+        {
+            let cached: CachedVersionedResponse =
+                serde_json::from_str(&text).map_err(ZoteroError::Json)?;
+            let data: T = serde_json::from_str(&cached.body).map_err(ZoteroError::Json)?;
+            return Ok(VersionedResponse {
+                data,
+                last_modified_version: cached.last_modified_version,
+            });
+        }
+        let resp = self
+            .http
+            .get(&url)
+            .query(&query)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api {
+                status: status.as_u16(),
+                message,
+            });
+        }
+        let last_modified_version = resp
+            .headers()
+            .get("Last-Modified-Version")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok());
+        let text = resp.text().await?;
+        if let Some(cache) = &self.cache {
+            let cached = CachedVersionedResponse {
+                body: text.clone(),
+                last_modified_version,
+            };
+            if let Ok(cache_text) = serde_json::to_string(&cached) {
+                cache.set(&url, &query, None, &cache_text);
+            }
+        }
+        let data: T = serde_json::from_str(&text).map_err(ZoteroError::Json)?;
+        Ok(VersionedResponse {
+            data,
+            last_modified_version,
+        })
     }
 
     /// GET request returning raw bytes (for file downloads).
@@ -596,6 +656,108 @@ impl ZoteroClient {
         self.get_json_array(&path, vec![]).await
     }
 
+    // ── Full-text endpoints ────────────────────────────────────────────
+
+    /// List all attachment items that have indexed full-text content, mapped
+    /// to their current full-text version number.
+    ///
+    /// `GET /users/<id>/fulltext`
+    ///
+    /// Returns a `HashMap<item_key, version>`. Use the `since` param to
+    /// fetch only items whose full-text changed after a given library version.
+    /// The `last_modified_version` in the response is the current library
+    /// version — use it as your next `since` checkpoint.
+    pub async fn list_fulltext_versions(
+        &self,
+        params: &FulltextParams,
+    ) -> Result<VersionedResponse<HashMap<String, u64>>> {
+        let path = format!("{}/fulltext", self.user_prefix());
+        self.get_json_versioned(&path, params.to_query_pairs()).await
+    }
+
+    /// Get the full-text content of a single attachment item.
+    ///
+    /// `GET /users/<id>/items/<key>/fulltext`
+    ///
+    /// Returns 404 if the item has no indexed content.
+    /// PDF attachments populate `indexed_pages` / `total_pages`;
+    /// other document types populate `indexed_chars` / `total_chars`.
+    pub async fn get_item_fulltext(&self, key: &str) -> Result<VersionedResponse<ItemFulltext>> {
+        let path = format!("{}/items/{}/fulltext", self.user_prefix(), key);
+        self.get_json_versioned(&path, vec![]).await
+    }
+
+    // ── Deleted-objects endpoint ───────────────────────────────────────
+
+    /// Get all objects deleted from the library since a given version.
+    ///
+    /// `GET /users/<id>/deleted?since=<version>`
+    ///
+    /// The `since` parameter is required; pass `0` to get the full deletion
+    /// history. Use `last_modified_version` from the response as your next
+    /// `since` checkpoint for incremental sync.
+    pub async fn get_deleted(
+        &self,
+        params: &DeletedParams,
+    ) -> Result<VersionedResponse<DeletedObjects>> {
+        let path = format!("{}/deleted", self.user_prefix());
+        self.get_json_versioned(&path, params.to_query_pairs()).await
+    }
+
+    // ── Settings endpoints ─────────────────────────────────────────────
+
+    /// Get all user settings as a map of setting key → [`SettingEntry`].
+    ///
+    /// `GET /users/<id>/settings`
+    ///
+    /// Known keys include `tagColors` (an array of `{name, color}` objects)
+    /// and `lastPageIndex_u_<itemKey>` (last-viewed page for a PDF).
+    pub async fn get_settings(
+        &self,
+    ) -> Result<VersionedResponse<HashMap<String, SettingEntry>>> {
+        let path = format!("{}/settings", self.user_prefix());
+        self.get_json_versioned(&path, vec![]).await
+    }
+
+    /// Get a single user setting by key.
+    ///
+    /// `GET /users/<id>/settings/<key>`
+    ///
+    /// Returns 404 if the setting key does not exist.
+    pub async fn get_setting(&self, key: &str) -> Result<VersionedResponse<SettingEntry>> {
+        let path = format!("{}/settings/{}", self.user_prefix(), key);
+        self.get_json_versioned(&path, vec![]).await
+    }
+
+    // ── File view endpoints ────────────────────────────────────────────
+
+    /// Download the file content of an attachment via the browser-view URL.
+    ///
+    /// `GET /users/<id>/items/<key>/file/view`
+    ///
+    /// Follows the 302 redirect to the Zotero CDN and returns the raw bytes.
+    /// Unlike [`download_item_file`], the redirect target is a stable Zotero
+    /// CDN URL rather than a short-lived S3 presigned URL.
+    ///
+    /// [`download_item_file`]: ZoteroClient::download_item_file
+    pub async fn get_item_file_view(&self, key: &str) -> Result<Vec<u8>> {
+        let path = format!("{}/items/{}/file/view", self.user_prefix(), key);
+        self.get_binary(&path).await
+    }
+
+    /// Get a pre-signed CDN URL for viewing an attachment file.
+    ///
+    /// `GET /users/<id>/items/<key>/file/view/url`
+    ///
+    /// Returns the redirect target URL as a plain string without following the
+    /// redirect. Useful when you need the URL itself rather than the content —
+    /// e.g. to pass to a browser or PDF viewer.
+    pub async fn get_item_file_view_url(&self, key: &str) -> Result<String> {
+        let path = format!("{}/items/{}/file/view/url", self.user_prefix(), key);
+        let bytes = self.get_binary(&path).await?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
+
     // ── Key info endpoint ──────────────────────────────────────────────
 
     /// Get information about the current API key.
@@ -604,6 +766,18 @@ impl ZoteroClient {
     pub async fn get_key_info(&self) -> Result<serde_json::Value> {
         let path = format!("/keys/{}", self.api_key);
         self.get_json_single(&path, vec![]).await
+    }
+
+    /// Get information about the API key used for this request.
+    ///
+    /// `GET /keys/current`
+    ///
+    /// Equivalent to [`get_key_info`] but uses the `/keys/current` alias
+    /// instead of embedding the key in the path.
+    ///
+    /// [`get_key_info`]: ZoteroClient::get_key_info
+    pub async fn get_current_key_info(&self) -> Result<serde_json::Value> {
+        self.get_json_single("/keys/current", vec![]).await
     }
 }
 
@@ -638,10 +812,18 @@ struct CachedArrayResponse {
     last_modified_version: Option<u64>,
 }
 
+/// Internal type for caching versioned single-object responses.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedVersionedResponse {
+    body: String,
+    last_modified_version: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cache::DiskCache;
+    use crate::params::{DeletedParams, FulltextParams};
     use std::time::Duration;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1195,5 +1377,409 @@ mod tests {
         assert_eq!(urlencoded("simple"), "simple");
         assert_eq!(urlencoded("with space"), "with%20space");
         assert_eq!(urlencoded("special/chars&more"), "special%2Fchars%26more");
+    }
+
+    // ── Full-text tests ───────────────────────────────────────────────
+
+    /// Real response shape (captured from live API, two entries):
+    /// {"ZLIKNFNF":1385,"EYNDSWQJ":1399}
+    /// Last-Modified-Version: 4384
+    #[tokio::test]
+    async fn test_list_fulltext_versions() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/fulltext"))
+            .and(header("Zotero-API-Version", "3"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(r#"{"ZLIKNFNF":1385,"EYNDSWQJ":1399}"#)
+                    .insert_header("Last-Modified-Version", "4384"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client
+            .list_fulltext_versions(&FulltextParams::default())
+            .await
+            .unwrap();
+        assert_eq!(resp.last_modified_version, Some(4384));
+        assert_eq!(resp.data.len(), 2);
+        assert_eq!(resp.data["ZLIKNFNF"], 1385);
+        assert_eq!(resp.data["EYNDSWQJ"], 1399);
+    }
+
+    #[tokio::test]
+    async fn test_list_fulltext_versions_since_param() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/fulltext"))
+            .and(query_param("since", "1380"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(r#"{"ZLIKNFNF":1385}"#)
+                    .insert_header("Last-Modified-Version", "4384"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let params = FulltextParams::builder().since(1380u64).build();
+        let resp = client.list_fulltext_versions(&params).await.unwrap();
+        assert_eq!(resp.data.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_list_fulltext_versions_empty() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/fulltext"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("{}")
+                    .insert_header("Last-Modified-Version", "4384"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client
+            .list_fulltext_versions(&FulltextParams::default())
+            .await
+            .unwrap();
+        assert!(resp.data.is_empty());
+        assert_eq!(resp.last_modified_version, Some(4384));
+    }
+
+    /// Real response shape (captured from live API, item 8HNHIZCE):
+    /// {"content":"THEORY OF COMPUTING...","indexedPages":14,"totalPages":14}
+    /// Last-Modified-Version: 13
+    #[tokio::test]
+    async fn test_get_item_fulltext() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/ATTACH1/fulltext"))
+            .and(header("Zotero-API-Version", "3"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        r#"{"content":"Distance Transforms of Sampled Functions","indexedPages":14,"totalPages":14}"#,
+                    )
+                    .insert_header("Last-Modified-Version", "13"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client.get_item_fulltext("ATTACH1").await.unwrap();
+        assert_eq!(resp.last_modified_version, Some(13));
+        assert_eq!(resp.data.indexed_pages, Some(14));
+        assert_eq!(resp.data.total_pages, Some(14));
+        assert!(resp.data.content.contains("Distance Transforms"));
+    }
+
+    #[tokio::test]
+    async fn test_get_item_fulltext_not_indexed() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/NOTEXT/fulltext"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client.get_item_fulltext("NOTEXT").await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 404),
+            _ => panic!("Expected Api error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_item_fulltext_char_indexed() {
+        // Non-PDF documents report indexedChars/totalChars instead of pages
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/HTML1/fulltext"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        r#"{"content":"Some web content","indexedChars":500,"totalChars":1000}"#,
+                    )
+                    .insert_header("Last-Modified-Version", "77"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client.get_item_fulltext("HTML1").await.unwrap();
+        assert_eq!(resp.data.indexed_chars, Some(500));
+        assert_eq!(resp.data.total_chars, Some(1000));
+        assert!(resp.data.indexed_pages.is_none());
+    }
+
+    // ── Deleted tests ─────────────────────────────────────────────────
+
+    /// Real response shape (captured from live API, condensed to 2 items):
+    /// {"collections":["2WDMI6DR"],"items":["23IAQK5A","24F9PQTC"],
+    ///  "searches":[],"tags":["old tag"],"settings":[]}
+    /// Last-Modified-Version: 4384
+    #[tokio::test]
+    async fn test_get_deleted() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/deleted"))
+            .and(query_param("since", "0"))
+            .and(header("Zotero-API-Version", "3"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        r#"{"collections":["2WDMI6DR"],"items":["23IAQK5A","24F9PQTC"],"searches":[],"tags":["old tag"],"settings":[]}"#,
+                    )
+                    .insert_header("Last-Modified-Version", "4384"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let params = DeletedParams::builder().since(0u64).build();
+        let resp = client.get_deleted(&params).await.unwrap();
+        assert_eq!(resp.last_modified_version, Some(4384));
+        assert_eq!(resp.data.collections, vec!["2WDMI6DR"]);
+        assert_eq!(resp.data.items.len(), 2);
+        assert_eq!(resp.data.tags, vec!["old tag"]);
+        assert!(resp.data.searches.is_empty());
+        assert!(resp.data.settings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_deleted_since_param_forwarded() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/deleted"))
+            .and(query_param("since", "1000"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        r#"{"collections":[],"items":[],"searches":[],"tags":[],"settings":[]}"#,
+                    )
+                    .insert_header("Last-Modified-Version", "4384"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let params = DeletedParams::builder().since(1000u64).build();
+        let resp = client.get_deleted(&params).await.unwrap();
+        assert!(resp.data.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_deleted_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/deleted"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("since parameter required"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let params = DeletedParams::builder().since(0u64).build();
+        let err = client.get_deleted(&params).await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 400),
+            _ => panic!("Expected Api error"),
+        }
+    }
+
+    // ── Settings tests ────────────────────────────────────────────────
+
+    /// Real response shape (captured from live API, condensed to one entry):
+    /// {"tagColors":{"value":[{"name":"Starred","color":"#FF8C19"}],"version":3826}}
+    /// Last-Modified-Version: 4384
+    #[tokio::test]
+    async fn test_get_settings() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/settings"))
+            .and(header("Zotero-API-Version", "3"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        r##"{"tagColors":{"value":[{"name":"Starred","color":"#FF8C19"}],"version":3826}}"##,
+                    )
+                    .insert_header("Last-Modified-Version", "4384"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client.get_settings().await.unwrap();
+        assert_eq!(resp.last_modified_version, Some(4384));
+        let tag_colors = resp.data.get("tagColors").unwrap();
+        assert_eq!(tag_colors.version, 3826);
+        assert!(tag_colors.value.is_array());
+    }
+
+    #[tokio::test]
+    async fn test_get_settings_empty() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/settings"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("{}")
+                    .insert_header("Last-Modified-Version", "100"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client.get_settings().await.unwrap();
+        assert!(resp.data.is_empty());
+    }
+
+    /// Real response shape (captured from live API, /settings/tagColors):
+    /// {"value":[{"name":"Starred","color":"#FF8C19"},{"name":"Survey","color":"#FF6666"}],"version":3826}
+    /// Last-Modified-Version: 3826
+    #[tokio::test]
+    async fn test_get_setting() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/settings/tagColors"))
+            .and(header("Zotero-API-Version", "3"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        r##"{"value":[{"name":"Starred","color":"#FF8C19"},{"name":"Survey","color":"#FF6666"}],"version":3826}"##,
+                    )
+                    .insert_header("Last-Modified-Version", "3826"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let resp = client.get_setting("tagColors").await.unwrap();
+        assert_eq!(resp.last_modified_version, Some(3826));
+        assert_eq!(resp.data.version, 3826);
+        let arr = resp.data.value.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["name"], "Starred");
+    }
+
+    #[tokio::test]
+    async fn test_get_setting_not_found() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/settings/nonexistent"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client.get_setting("nonexistent").await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 404),
+            _ => panic!("Expected Api error"),
+        }
+    }
+
+    // ── File view tests ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_get_item_file_view() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/ATTACH1/file/view"))
+            .and(header("Zotero-API-Version", "3"))
+            .and(header("Zotero-API-Key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(b"fake-pdf-bytes".to_vec()),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let bytes = client.get_item_file_view("ATTACH1").await.unwrap();
+        assert_eq!(bytes, b"fake-pdf-bytes");
+    }
+
+    #[tokio::test]
+    async fn test_get_item_file_view_404() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/NOFILE/file/view"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client.get_item_file_view("NOFILE").await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 404),
+            _ => panic!("Expected Api error"),
+        }
+    }
+
+    /// Real response shape (captured from live API, /items/8HNHIZCE/file/view/url):
+    /// Content-Type: application/json, body is a plain URL string (no JSON quotes)
+    #[tokio::test]
+    async fn test_get_item_file_view_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/ATTACH1/file/view/url"))
+            .and(header("Zotero-API-Version", "3"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("https://files.zotero.net/abc123/paper.pdf"),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let url = client.get_item_file_view_url("ATTACH1").await.unwrap();
+        assert_eq!(url, "https://files.zotero.net/abc123/paper.pdf");
+    }
+
+    #[tokio::test]
+    async fn test_get_item_file_view_url_404() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/12345/items/NOFILE/file/view/url"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client.get_item_file_view_url("NOFILE").await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 404),
+            _ => panic!("Expected Api error"),
+        }
+    }
+
+    // ── Key info tests ────────────────────────────────────────────────
+
+    /// Real response shape (captured from live API, /keys/current):
+    /// {"key":"...","userID":16916553,"username":"mattmg","displayName":"","access":{...}}
+    #[tokio::test]
+    async fn test_get_current_key_info() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/keys/current"))
+            .and(header("Zotero-API-Version", "3"))
+            .and(header("Zotero-API-Key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(
+                    r#"{"key":"test-key","userID":12345,"username":"testuser","displayName":"","access":{"user":{"library":true,"files":true,"notes":true},"groups":{"all":{"library":true,"write":false}}}}"#,
+                ),
+            )
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let info = client.get_current_key_info().await.unwrap();
+        assert_eq!(info["userID"], 12345);
+        assert_eq!(info["username"], "testuser");
+        assert_eq!(info["access"]["user"]["library"], true);
+    }
+
+    #[tokio::test]
+    async fn test_get_current_key_info_forbidden() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/keys/current"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+            .mount(&server)
+            .await;
+        let client = setup_client(&server).await;
+        let err = client.get_current_key_info().await.unwrap_err();
+        match err {
+            ZoteroError::Api { status, .. } => assert_eq!(status, 403),
+            _ => panic!("Expected Api error"),
+        }
     }
 }

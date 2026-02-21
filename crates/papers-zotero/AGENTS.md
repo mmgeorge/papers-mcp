@@ -4,6 +4,15 @@
 
 This crate is a Rust API client for the [Zotero Web API v3](https://www.zotero.org/support/dev/web_api/v3/start). Zotero is a personal research library manager for collecting, organizing, and citing research papers.
 
+## Zotero Rest Documentation
+- Start here (index): https://www.zotero.org/support/dev/web_api/v3/start
+- Basics & read requests: https://www.zotero.org/support/dev/web_api/v3/basics
+- Write requests: https://www.zotero.org/support/dev/web_api/v3/write_requests
+- File uploads/downloads: https://www.zotero.org/support/dev/web_api/v3/file_upload
+- Full-text content: https://www.zotero.org/support/dev/web_api/v3/fulltext_content
+- Syncing: https://www.zotero.org/support/dev/web_api/v3/syncing
+- Streaming API: https://www.zotero.org/support/dev/web_api/v3/streaming_api
+
 ## How This Crate Was Derived
 
 1. The API was explored via live `curl` calls against a real user library

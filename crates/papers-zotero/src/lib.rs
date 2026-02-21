@@ -46,14 +46,17 @@
 //!
 //! The client provides 25+ methods covering all Zotero read endpoints:
 //!
-//! - **8 item endpoints** — list/get items, top items, trash, children,
-//!   collection items, publication items
+//! - **9 item endpoints** — list/get items, top items, trash, children,
+//!   collection items, publication items, file download, file view, file URL
 //! - **4 collection endpoints** — list/get collections, top, subcollections
 //! - **10 tag endpoints** — list tags across various scopes (items, collections,
 //!   trash, publications)
 //! - **2 search endpoints** — list/get saved searches
+//! - **2 full-text endpoints** — list indexed versions, get item full-text
+//! - **1 deleted endpoint** — get deleted object keys since a version
+//! - **2 settings endpoints** — get all settings, get single setting
 //! - **1 group endpoint** — list user groups
-//! - **1 key endpoint** — get API key info
+//! - **2 key endpoints** — get API key info by value or by current request
 
 pub mod cache;
 pub mod client;
@@ -65,6 +68,6 @@ pub mod types;
 pub use cache::DiskCache;
 pub use client::ZoteroClient;
 pub use error::{Result, ZoteroError};
-pub use params::{CollectionListParams, ItemListParams, TagListParams};
-pub use response::PagedResponse;
+pub use params::{CollectionListParams, DeletedParams, FulltextParams, ItemListParams, TagListParams};
+pub use response::{PagedResponse, VersionedResponse};
 pub use types::*;

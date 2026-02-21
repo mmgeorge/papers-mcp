@@ -221,6 +221,57 @@ impl TagListParams {
     }
 }
 
+/// Query parameters for the full-text versions endpoint (`/fulltext`).
+///
+/// ```
+/// use papers_zotero::FulltextParams;
+///
+/// // Fetch only items whose full-text changed after version 1380
+/// let params = FulltextParams::builder().since(1380u64).build();
+/// ```
+#[derive(Debug, Default, Clone, bon::Builder)]
+pub struct FulltextParams {
+    /// Return only items with full-text content modified after this library
+    /// version. Omit (or use `0`) to get all indexed items.
+    pub since: Option<u64>,
+}
+
+impl FulltextParams {
+    pub(crate) fn to_query_pairs(&self) -> Vec<(&str, String)> {
+        let mut pairs = Vec::new();
+        if let Some(v) = self.since {
+            pairs.push(("since", v.to_string()));
+        }
+        pairs
+    }
+}
+
+/// Query parameters for the deleted-objects endpoint (`/deleted`).
+///
+/// The `since` parameter is required — the API returns `400` without it.
+///
+/// ```
+/// use papers_zotero::DeletedParams;
+///
+/// // All deletions ever recorded
+/// let params = DeletedParams::builder().since(0u64).build();
+///
+/// // Only deletions since version 1000
+/// let params = DeletedParams::builder().since(1000u64).build();
+/// ```
+#[derive(Debug, Clone, bon::Builder)]
+pub struct DeletedParams {
+    /// Return objects deleted since this library version. Use `0` to get
+    /// all deletions ever recorded.
+    pub since: u64,
+}
+
+impl DeletedParams {
+    pub(crate) fn to_query_pairs(&self) -> Vec<(&str, String)> {
+        vec![("since", self.since.to_string())]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +331,33 @@ mod tests {
             .build();
         assert_eq!(params.q.as_deref(), Some("ML"));
         assert_eq!(params.limit, Some(10));
+    }
+
+    #[test]
+    fn test_fulltext_params_default_empty() {
+        let params = FulltextParams::default();
+        assert!(params.to_query_pairs().is_empty());
+    }
+
+    #[test]
+    fn test_fulltext_params_since() {
+        let params = FulltextParams::builder().since(1380u64).build();
+        let pairs = params.to_query_pairs();
+        assert_eq!(pairs, vec![("since", "1380".into())]);
+    }
+
+    #[test]
+    fn test_deleted_params_since() {
+        let params = DeletedParams::builder().since(0u64).build();
+        let pairs = params.to_query_pairs();
+        assert_eq!(pairs, vec![("since", "0".into())]);
+    }
+
+    #[test]
+    fn test_deleted_params_since_nonzero() {
+        let params = DeletedParams::builder().since(500u64).build();
+        assert_eq!(params.since, 500);
+        let pairs = params.to_query_pairs();
+        assert_eq!(pairs, vec![("since", "500".into())]);
     }
 }

@@ -1,5 +1,33 @@
 use serde::{Deserialize, Serialize};
 
+/// Response wrapping a single Zotero object with its sync version header.
+///
+/// Used by endpoints that return one JSON object (not an array) and include
+/// a `Last-Modified-Version` response header — e.g. fulltext, deleted objects,
+/// and settings.
+///
+/// # Example
+///
+/// ```no_run
+/// # async fn example() -> papers_zotero::Result<()> {
+/// use papers_zotero::{ZoteroClient, DeletedParams};
+///
+/// let client = ZoteroClient::from_env()?;
+/// let resp = client.get_deleted(&DeletedParams::builder().since(0u64).build()).await?;
+/// println!("Deleted {} items as of version {:?}", resp.data.items.len(), resp.last_modified_version);
+/// # Ok(())
+/// # }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionedResponse<T> {
+    /// The deserialized response body.
+    pub data: T,
+
+    /// Library version at the time of the response (from `Last-Modified-Version`
+    /// header). Use this as the `since` value for subsequent sync calls.
+    pub last_modified_version: Option<u64>,
+}
+
 /// Paginated response wrapping Zotero array results with header metadata.
 ///
 /// Zotero API responses are raw JSON arrays `[...]` with pagination info in

@@ -10,6 +10,8 @@
 #
 # Response format: raw JSON arrays [...] with pagination in HTTP headers
 # Headers: Total-Results, Last-Modified-Version, Link (rel=next/last)
+#
+# Verified against live API (user 16916553) on 2026-02-21.
 
 [enums]
 
@@ -53,6 +55,12 @@ values = { "0" = "user-created", "1" = "automatic/imported" }
 path = "/keys/<key>"
 method = "GET"
 returns = "JSON object with key permissions"
+
+[endpoints.get_current_key_info]
+path = "/keys/current"
+method = "GET"
+returns = "JSON object with key permissions"
+note = "Returns same shape as /keys/<key>. Resolves the current request's API key."
 
 [endpoints.list_groups]
 path = "/users/<id>/groups"
@@ -133,6 +141,26 @@ method = "GET"
 params = "ItemListParams"
 returns = "Vec<Item>"
 
+# ── Full-text endpoints ──────────────────────────────────────────────
+
+[endpoints.list_fulltext_versions]
+path = "/users/<id>/fulltext"
+method = "GET"
+params = "FulltextParams"
+returns = "Map<key, version>"
+note = """Returns a JSON object mapping attachment item keys to their indexed version numbers.
+Response header Last-Modified-Version reflects the current library version.
+Use `since` to get only items whose full-text content changed after that version.
+Only attachment items with indexed content appear in this response."""
+
+[endpoints.get_item_fulltext]
+path = "/users/<id>/items/<key>/fulltext"
+method = "GET"
+returns = "ItemFulltext"
+note = """Returns full-text content for a single attachment item.
+Response header Last-Modified-Version is the version of this item's full-text content.
+Returns 404 if the item has no indexed full-text content."""
+
 # ── Search endpoints ─────────────────────────────────────────────────
 
 [endpoints.list_searches]
@@ -144,6 +172,65 @@ returns = "Vec<SavedSearch>"
 path = "/users/<id>/searches/<key>"
 method = "GET"
 returns = "SavedSearch"
+
+# ── Deleted-objects endpoint ─────────────────────────────────────────
+
+[endpoints.get_deleted]
+path = "/users/<id>/deleted"
+method = "GET"
+params = "DeletedParams"
+returns = "DeletedObjects"
+note = """Returns keys of objects deleted since a given library version.
+`since` parameter is required. Use 0 to get all deletions ever recorded.
+Response header Last-Modified-Version reflects the current library version.
+Use this during sync to remove locally cached objects that were deleted server-side."""
+
+# ── Settings endpoints ───────────────────────────────────────────────
+
+[endpoints.get_settings]
+path = "/users/<id>/settings"
+method = "GET"
+returns = "Map<settingKey, SettingEntry>"
+note = """Returns all user settings as a JSON object keyed by setting name.
+Each value is {value: Any, version: u64}.
+Common keys include 'tagColors' and 'lastPageIndex_u_<itemKey>'.
+Response header Last-Modified-Version reflects the current library version."""
+
+[endpoints.get_setting]
+path = "/users/<id>/settings/<key>"
+method = "GET"
+returns = "SettingEntry"
+note = """Returns a single setting entry: {value: Any, version: u64}.
+Response header Last-Modified-Version is the version of this specific setting."""
+
+# ── File endpoints ───────────────────────────────────────────────────
+
+[endpoints.get_item_file]
+path = "/users/<id>/items/<key>/file"
+method = "GET"
+returns = "binary (redirect)"
+note = """302 redirect to a short-lived S3 presigned URL for direct file download.
+Response headers before redirect include:
+  Zotero-File-MD5: hex hash for integrity verification
+  Zotero-File-Size: size in bytes
+  Zotero-File-Modification-Time: unix timestamp (ms)
+  Zotero-File-Compressed: 'Yes' | 'No'
+Only works for imported_file attachments; returns 404 for linked files."""
+
+[endpoints.get_item_file_view]
+path = "/users/<id>/items/<key>/file/view"
+method = "GET"
+returns = "binary (redirect)"
+note = """302 redirect to a Zotero CDN URL intended for browser viewing.
+Unlike /file, the redirect target is a stable Zotero CDN URL (not S3 presigned).
+No Zotero-File-* metadata headers are included before redirect."""
+
+[endpoints.get_item_file_view_url]
+path = "/users/<id>/items/<key>/file/view/url"
+method = "GET"
+returns = "String (plain URL)"
+note = """Returns 200 with the /file/view redirect target URL as a plain JSON string.
+Use this to obtain the CDN URL without following the redirect yourself."""
 
 # ── Tag endpoints ────────────────────────────────────────────────────
 
@@ -244,4 +331,42 @@ fields = [
     { name = "start", type = "u32", query_key = "start" },
     { name = "sort", type = "String", query_key = "sort" },
     { name = "direction", type = "String", query_key = "direction" },
+]
+
+[params.FulltextParams]
+fields = [
+    { name = "since", type = "u64", query_key = "since", description = "Return only items with full-text content modified after this library version" },
+]
+
+[params.DeletedParams]
+fields = [
+    { name = "since", type = "u64", query_key = "since", required = true, description = "Return objects deleted since this library version. Use 0 for all." },
+]
+
+# ── Response type schemas ─────────────────────────────────────────────
+
+[types.ItemFulltext]
+description = "Full-text content for a single attachment item"
+fields = [
+    { name = "content", type = "String", description = "Extracted text content of the attachment" },
+    { name = "indexedPages", type = "u32", description = "Number of pages successfully indexed" },
+    { name = "totalPages", type = "u32", description = "Total number of pages in the document" },
+]
+note = "indexedChars / totalChars are used in write requests instead of pages"
+
+[types.DeletedObjects]
+description = "Keys of objects deleted since a given library version"
+fields = [
+    { name = "collections", type = "Vec<String>", description = "Deleted collection keys" },
+    { name = "searches", type = "Vec<String>", description = "Deleted saved search keys" },
+    { name = "items", type = "Vec<String>", description = "Deleted item keys (includes attachments, notes)" },
+    { name = "tags", type = "Vec<String>", description = "Deleted tag names" },
+    { name = "settings", type = "Vec<String>", description = "Deleted setting keys" },
+]
+
+[types.SettingEntry]
+description = "A single user setting value with its library version"
+fields = [
+    { name = "value", type = "Any", description = "The setting value (type varies by key; tagColors is an array of {name, color} objects)" },
+    { name = "version", type = "u64", description = "Library version when this setting was last modified" },
 ]

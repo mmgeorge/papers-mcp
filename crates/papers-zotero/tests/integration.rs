@@ -1,5 +1,5 @@
 use papers_zotero::{
-    CollectionListParams, ItemListParams, TagListParams, ZoteroClient,
+    CollectionListParams, DeletedParams, FulltextParams, ItemListParams, TagListParams, ZoteroClient,
 };
 
 fn client() -> ZoteroClient {
@@ -230,4 +230,142 @@ async fn test_live_list_groups() {
 async fn test_live_key_info() {
     let info = client().get_key_info().await.unwrap();
     assert!(info.get("userID").is_some() || info.get("key").is_some());
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_live_current_key_info() {
+    let info = client().get_current_key_info().await.unwrap();
+    assert!(info.get("userID").is_some());
+    assert!(info.get("username").is_some());
+    assert!(info.get("access").is_some());
+}
+
+// ── Live full-text tests ─────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn test_live_list_fulltext_versions() {
+    let resp = client()
+        .list_fulltext_versions(&FulltextParams::default())
+        .await
+        .unwrap();
+    // Most libraries have at least some indexed PDFs
+    assert!(!resp.data.is_empty(), "expected some fulltext entries");
+    assert!(resp.last_modified_version.is_some());
+    // All values should be positive version numbers
+    for (key, version) in &resp.data {
+        assert!(!key.is_empty());
+        assert!(*version > 0, "version for {key} should be > 0");
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_live_list_fulltext_versions_since() {
+    // First get the current library version
+    let all = client()
+        .list_fulltext_versions(&FulltextParams::default())
+        .await
+        .unwrap();
+    let current_version = all.last_modified_version.unwrap_or(0);
+    // Fetch with since = current version — should be empty (no new content)
+    let resp = client()
+        .list_fulltext_versions(&FulltextParams::builder().since(current_version).build())
+        .await
+        .unwrap();
+    assert!(resp.data.is_empty(), "no new fulltext since current version");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_live_get_item_fulltext() {
+    // Find an attachment key from the fulltext index
+    let versions = client()
+        .list_fulltext_versions(&FulltextParams::default())
+        .await
+        .unwrap();
+    let (key, _) = versions.data.iter().next().expect("need at least one fulltext entry");
+    let resp = client().get_item_fulltext(key).await.unwrap();
+    assert!(!resp.data.content.is_empty());
+    assert!(resp.last_modified_version.is_some());
+    // Should have either page counts or char counts
+    let has_pages = resp.data.indexed_pages.is_some();
+    let has_chars = resp.data.indexed_chars.is_some();
+    assert!(has_pages || has_chars, "expected page or char count");
+}
+
+// ── Live deleted test ────────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn test_live_get_deleted() {
+    let params = DeletedParams::builder().since(0u64).build();
+    let resp = client().get_deleted(&params).await.unwrap();
+    assert!(resp.last_modified_version.is_some());
+    // Fields exist (may be empty arrays if nothing was deleted)
+    let _ = resp.data.collections.len();
+    let _ = resp.data.items.len();
+    let _ = resp.data.searches.len();
+    let _ = resp.data.tags.len();
+    let _ = resp.data.settings.len();
+}
+
+// ── Live settings tests ──────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn test_live_get_settings() {
+    let resp = client().get_settings().await.unwrap();
+    assert!(resp.last_modified_version.is_some());
+    // tagColors should be present in most libraries
+    if let Some(tc) = resp.data.get("tagColors") {
+        assert!(tc.value.is_array());
+        assert!(tc.version > 0);
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_live_get_setting_tag_colors() {
+    let resp = client().get_setting("tagColors").await.unwrap();
+    assert!(resp.last_modified_version.is_some());
+    assert!(resp.data.value.is_array());
+    assert!(resp.data.version > 0);
+    // Each entry should have name and color
+    for entry in resp.data.value.as_array().unwrap() {
+        assert!(entry.get("name").is_some());
+        assert!(entry.get("color").is_some());
+    }
+}
+
+// ── Live file view tests ─────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn test_live_get_item_file_view_url() {
+    // Find an imported_file attachment
+    let versions = client()
+        .list_fulltext_versions(&FulltextParams::default())
+        .await
+        .unwrap();
+    let (key, _) = versions.data.iter().next().expect("need at least one attachment");
+    let url = client().get_item_file_view_url(key).await.unwrap();
+    assert!(url.starts_with("https://"), "expected https URL, got: {url}");
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_live_get_item_file_view() {
+    let versions = client()
+        .list_fulltext_versions(&FulltextParams::default())
+        .await
+        .unwrap();
+    let (key, _) = versions.data.iter().next().expect("need at least one attachment");
+    let bytes = client().get_item_file_view(key).await.unwrap();
+    assert!(!bytes.is_empty());
+    // PDFs start with %PDF
+    if bytes.starts_with(b"%PDF") {
+        println!("Got PDF: {} bytes", bytes.len());
+    }
 }
