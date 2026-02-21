@@ -894,7 +894,7 @@ async fn main() {
                                 AdvancedMode::Accurate => papers_core::text::ProcessingMode::Accurate,
                             };
                             let mut source = papers_core::text::PdfSource::ZoteroLocal { path: local_path.to_string_lossy().into_owned() };
-                            match papers_core::text::do_extract(pdf_bytes, &key, Some((&dl, processing_mode)), &mut source).await {
+                            match papers_core::text::do_extract(pdf_bytes, &key, Some(&zotero), Some((&dl, processing_mode)), &mut source).await {
                                 Ok(markdown) => print!("{markdown}"),
                                 Err(e) => exit_err(&e.to_string()),
                             }

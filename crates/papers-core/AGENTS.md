@@ -104,6 +104,45 @@ pub use summary::SlimListResponse;
 4. Add wiremock tests in `tests/api.rs`
 5. Update `CHANGES.md` if the list response differs from the raw API
 
+## Testing DataLab calls
+
+**Always mock DataLab with wiremock — never call the real API from tests.**
+
+Real DataLab calls spend credits and take ~25 seconds per call. Use
+`DatalabClient::new("mock-key").with_base_url(server.uri())` to point the client
+at a wiremock `MockServer`. Mock the two endpoints:
+
+```rust
+// Submit: POST /api/v1/marker → { "request_id": "test-req-1", "success": true }
+Mock::given(method("POST")).and(path("/api/v1/marker"))
+    .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+        "request_id": "test-req-1", "success": true
+    })))
+    .mount(&server).await;
+
+// Poll: GET /api/v1/marker/test-req-1 → complete with markdown
+Mock::given(method("GET")).and(path_regex(r"^/api/v1/marker/test-req-1$"))
+    .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+        "status": "complete", "success": true,
+        "markdown": "# Test\n\nContent.",
+        "json": {"pages": []}
+    })))
+    .mount(&server).await;
+```
+
+See `tests/text_cache.rs` → `setup_datalab_mock()` for the canonical helper.
+
+## Zotero sync (Papers.zip)
+
+`do_extract` in `text.rs` backs up DataLab extraction results to Zotero as a
+`Papers.zip` attachment on the parent item. Key properties:
+- Upload failures are **best-effort**: errors are logged and swallowed, the
+  extracted text is always returned.
+- 403 write-denied errors are silently ignored (read-only API key is fine).
+- The Zotero client passed to `do_extract` must use `ZOTERO_TEST_API_KEY` in
+  tests (a dedicated write-capable test library). Never use the main
+  `ZOTERO_API_KEY` (read-only) for write tests.
+
 ## Key notes
 
 - The `papers-openalex` crate is not re-exported as a module — only specific items are

@@ -936,7 +936,7 @@ impl PapersMcp {
 
         for i in 0..55 {
             match papers_core::text::try_zotero(zotero, doi, title).await {
-                Ok(Some((bytes, source))) => {
+                Ok(Some((bytes, source, _zotero_key))) => {
                     let _ = peer.notify_progress(ProgressNotificationParam {
                         progress_token: token.clone(),
                         progress: total_steps as f64,

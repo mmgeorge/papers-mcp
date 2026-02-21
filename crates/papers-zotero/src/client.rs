@@ -467,6 +467,145 @@ impl ZoteroClient {
         self.get_binary(&path).await
     }
 
+    /// Create a child attachment item under a parent.
+    ///
+    /// `POST /users/<id>/items`
+    ///
+    /// Returns the new attachment item's key.
+    pub async fn create_imported_attachment(
+        &self,
+        parent_key: &str,
+        filename: &str,
+        content_type: &str,
+    ) -> Result<String> {
+        let item = serde_json::json!([{
+            "itemType": "attachment",
+            "parentItem": parent_key,
+            "linkMode": "imported_file",
+            "title": filename,
+            "filename": filename,
+            "contentType": content_type,
+            "tags": [],
+            "collections": []
+        }]);
+        let path = format!("{}/items", self.user_prefix());
+        let resp = self.post_json_write(&path, &item).await?;
+        resp.successful
+            .get("0")
+            .and_then(|v| v.get("key"))
+            .and_then(|k| k.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| ZoteroError::Api {
+                status: 0,
+                message: "create_imported_attachment: no key in successful[\"0\"]".into(),
+            })
+    }
+
+    /// Upload file bytes to an attachment item using Zotero's 3-step S3 protocol.
+    ///
+    /// `POST /users/<id>/items/<key>/file`
+    pub async fn upload_attachment_file(
+        &self,
+        attachment_key: &str,
+        filename: &str,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        use md5::{Digest, Md5};
+
+        // Step 1: compute md5, size, mtime
+        let hash = Md5::digest(&data);
+        let md5_hex = format!("{:x}", hash);
+        let filesize = data.len();
+        let mtime = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+
+        // Step 2: register upload
+        let path = format!("{}/items/{}/file", self.user_prefix(), attachment_key);
+        let url = format!("{}{}", self.base_url, path);
+        let register_body = format!(
+            "md5={}&filename={}&filesize={}&mtime={}",
+            md5_hex, filename, filesize, mtime
+        );
+        let resp = self
+            .http
+            .post(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("If-None-Match", "*")
+            .body(register_body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let message = resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: status.as_u16(), message });
+        }
+        let register_text = resp.text().await?;
+        let register_json: serde_json::Value =
+            serde_json::from_str(&register_text).map_err(ZoteroError::Json)?;
+
+        // If file already exists on S3, we're done
+        if register_json.get("exists").and_then(|v| v.as_u64()) == Some(1) {
+            return Ok(());
+        }
+
+        // Step 3: upload to S3
+        let s3_url = register_json["url"]
+            .as_str()
+            .ok_or_else(|| ZoteroError::Api { status: 0, message: "upload response missing url".into() })?
+            .to_string();
+        let s3_content_type = register_json["contentType"]
+            .as_str()
+            .ok_or_else(|| ZoteroError::Api { status: 0, message: "upload response missing contentType".into() })?
+            .to_string();
+        let prefix = register_json["prefix"].as_str().unwrap_or("").as_bytes().to_vec();
+        let suffix = register_json["suffix"].as_str().unwrap_or("").as_bytes().to_vec();
+        let upload_key = register_json["uploadKey"]
+            .as_str()
+            .ok_or_else(|| ZoteroError::Api { status: 0, message: "upload response missing uploadKey".into() })?
+            .to_string();
+
+        let mut body = prefix;
+        body.extend_from_slice(&data);
+        body.extend_from_slice(&suffix);
+
+        let s3_resp = self
+            .http
+            .post(&s3_url)
+            .header("Content-Type", s3_content_type)
+            .body(body)
+            .send()
+            .await?;
+        let s3_status = s3_resp.status();
+        if !s3_status.is_success() {
+            let message = s3_resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: s3_status.as_u16(), message });
+        }
+
+        // Step 4: register completion
+        let complete_body = format!("upload={}", upload_key);
+        let complete_resp = self
+            .http
+            .post(&url)
+            .header("Zotero-API-Version", "3")
+            .header("Zotero-API-Key", &self.api_key)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("If-None-Match", "*")
+            .body(complete_body)
+            .send()
+            .await?;
+        let complete_status = complete_resp.status();
+        if !complete_status.is_success() {
+            let message = complete_resp.text().await.unwrap_or_default();
+            return Err(ZoteroError::Api { status: complete_status.as_u16(), message });
+        }
+
+        Ok(())
+    }
+
     // ── Collection endpoints ───────────────────────────────────────────
 
     /// List all collections in the library.

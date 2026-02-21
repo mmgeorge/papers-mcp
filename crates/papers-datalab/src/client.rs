@@ -51,6 +51,12 @@ impl DatalabClient {
         }
     }
 
+    /// Override the base URL. Useful for testing with a mock server.
+    pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
+        self.base_url = url.into();
+        self
+    }
+
     /// Create a client from the `DATALAB_API_KEY` environment variable.
     ///
     /// Returns [`DatalabError::MissingApiKey`] if the variable is not set.
