@@ -75,7 +75,19 @@ papers zotero search list      [--json]
 papers zotero search get       <key>    [--json]
 
 papers zotero group list       [--json]
+
+papers zotero extract list     [-s <q>] [-n <n>] [--json]
+papers zotero extract text     <key|doi|title>
+papers zotero extract json     <key|doi|title>
+papers zotero extract get      <key|doi|title>
 ```
+
+`extract list` shows all items that have a DataLab extraction in **either** the
+local cache or Zotero (`Papers.zip` backup), with two checkmarks per item:
+`[✓ local] [✓ zotero]`. Items with neither are omitted.
+
+`extract text` / `extract json` / `extract get` are **read-only** — they never
+invoke DataLab. Use `papers zotero work extract <key>` to actually run extraction.
 
 Default output is human-readable text. Add `--json` for raw JSON.
 Default `--per-page` is 10 (vs API default of 25).
@@ -140,6 +152,31 @@ target/debug/papers.exe zotero work extract U9PRIZJ7
 # wrong — don't do this
 ZOTERO_API_KEY=$(powershell.exe -Command "...") target/debug/papers.exe ...
 ```
+
+## Integration test cache directory
+
+Tests that write fake DataLab cache files must **NOT** write to the production
+`papers/datalab` directory. Instead, redirect the cache by setting the
+`PAPERS_DATALAB_CACHE_DIR` environment variable before any test code runs:
+
+```rust
+static INIT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+fn test_cache_base() -> &'static std::path::PathBuf {
+    INIT.get_or_init(|| {
+        let dir = dirs::cache_dir().unwrap().join("papers").join("test");
+        std::fs::create_dir_all(&dir).unwrap();
+        unsafe { std::env::set_var("PAPERS_DATALAB_CACHE_DIR", &dir) };
+        dir
+    })
+}
+```
+
+- Write to: `{cache_dir}/papers/test/{key}/`  (NOT `papers/datalab`)
+- `PAPERS_DATALAB_CACHE_DIR` is read by `datalab_cache_dir()` and `datalab_cached_item_keys()` in `papers-core`
+- Use per-test unique key namespaces (e.g., `EXT00101`) to prevent parallel test interference
+- Use a drop-guard (`CacheCleanup`) to remove test dirs even on panic
+- See `tests/extract.rs` for the canonical pattern
 
 ## Key gotchas
 

@@ -3,7 +3,7 @@ use base64::Engine as _;
 use papers_datalab::{DatalabClient, MarkerRequest, OutputFormat};
 use papers_openalex::{GetParams, OpenAlexClient, Work};
 use papers_zotero::{ItemListParams, ZoteroClient};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Where the PDF was obtained from.
@@ -110,13 +110,204 @@ fn zotero_data_dir() -> Option<PathBuf> {
 }
 
 fn datalab_cache_dir(short_id: &str) -> Option<PathBuf> {
+    if let Ok(base) = std::env::var("PAPERS_DATALAB_CACHE_DIR") {
+        return Some(PathBuf::from(base).join(short_id));
+    }
     dirs::cache_dir().map(|d| d.join("papers").join("datalab").join(short_id))
+}
+
+/// Upload the local DataLab cache for `item_key` to Zotero as
+/// `papers_extract_{item_key}.zip` attached to that same item.
+///
+/// The caller is responsible for ensuring the Zotero item exists before calling
+/// this function (callers should check item existence and skip if absent).
+///
+/// Returns an error if there is no local cache for the key or the upload fails.
+pub async fn upload_extraction_to_zotero(
+    zc: &ZoteroClient,
+    item_key: &str,
+) -> Result<(), WorkTextError> {
+    let dir = datalab_cache_dir(item_key)
+        .ok_or_else(|| WorkTextError::PdfExtract("cannot determine cache directory".into()))?;
+    if !dir.join(format!("{item_key}.md")).exists() {
+        return Err(WorkTextError::PdfExtract(format!("no local cache for {item_key}")));
+    }
+    upload_papers_zip(zc, item_key, &dir, item_key).await
+}
+
+/// Download `papers_extract_{item_key}.zip` from Zotero (identified by `att_key`)
+/// and restore it to the local cache directory.
+///
+/// `att_key` is the Zotero key of the attachment item itself (not the parent).
+pub async fn download_extraction_from_zotero(
+    zc: &ZoteroClient,
+    att_key: &str,
+    item_key: &str,
+) -> Result<(), WorkTextError> {
+    let zip_bytes = zc.download_item_file(att_key).await?;
+    if zip_bytes.is_empty() {
+        return Err(WorkTextError::PdfExtract(format!("empty download for {item_key}")));
+    }
+    let dir = datalab_cache_dir(item_key)
+        .ok_or_else(|| WorkTextError::PdfExtract("cannot determine cache directory".into()))?;
+    unzip_to_cache_dir(&zip_bytes, &dir).map_err(|e| WorkTextError::PdfExtract(e.to_string()))
 }
 
 /// Return the cached markdown for `cache_id` if it exists, otherwise `None`.
 pub fn datalab_cached_markdown(cache_id: &str) -> Option<String> {
     let dir = datalab_cache_dir(cache_id)?;
     std::fs::read_to_string(dir.join(format!("{cache_id}.md"))).ok()
+}
+
+/// Return the keys of all locally cached DataLab extractions.
+///
+/// Scans the DataLab cache base directory and returns the name of every
+/// subdirectory that contains a `{key}.md` file.
+pub fn datalab_cached_item_keys() -> Vec<String> {
+    let base = if let Ok(base_str) = std::env::var("PAPERS_DATALAB_CACHE_DIR") {
+        PathBuf::from(base_str)
+    } else {
+        match dirs::cache_dir() {
+            Some(d) => d.join("papers").join("datalab"),
+            None => return vec![],
+        }
+    };
+    if !base.is_dir() {
+        return vec![];
+    }
+    let mut keys = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            let key = match entry.file_name().to_str() {
+                Some(k) => k.to_string(),
+                None => continue,
+            };
+            if entry.path().join(format!("{key}.md")).exists() {
+                keys.push(key);
+            }
+        }
+    }
+    keys
+}
+
+/// Return the cached JSON for `cache_id` if it exists, otherwise `None`.
+pub fn datalab_cached_json(cache_id: &str) -> Option<String> {
+    let dir = datalab_cache_dir(cache_id)?;
+    std::fs::read_to_string(dir.join(format!("{cache_id}.json"))).ok()
+}
+
+/// Return the local cache directory path for `cache_id` if determinable.
+pub fn datalab_cache_dir_path(cache_id: &str) -> Option<std::path::PathBuf> {
+    datalab_cache_dir(cache_id)
+}
+
+/// Metadata written alongside each DataLab extraction cache entry as `meta.json`.
+///
+/// All fields except `item_key` are `Option` so that the struct can be read
+/// from older cache entries that may be missing fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractionMeta {
+    pub item_key: String,
+    pub zotero_user_id: Option<String>,
+    pub title: Option<String>,
+    pub authors: Option<Vec<String>>,
+    pub item_type: Option<String>,
+    pub date: Option<String>,
+    pub doi: Option<String>,
+    pub url: Option<String>,
+    pub publication_title: Option<String>,
+    pub extracted_at: Option<String>,
+    pub processing_mode: Option<String>,
+    pub pdf_source: Option<serde_json::Value>,
+}
+
+/// Read the `meta.json` for `cache_id` from the local DataLab cache, if present.
+pub fn read_extraction_meta(cache_id: &str) -> Option<ExtractionMeta> {
+    let dir = datalab_cache_dir(cache_id)?;
+    let bytes = std::fs::read(dir.join("meta.json")).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Return an ISO 8601 UTC timestamp for the current moment (no external deps).
+fn iso_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Civil date from unix epoch seconds using Hinnant's algorithm.
+    let days = (secs / 86400) as i64;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    let hh = (secs % 86_400) / 3_600;
+    let mm = (secs % 3_600) / 60;
+    let ss = secs % 60;
+    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+/// Write `meta.json` into `dir` for the given extraction.
+///
+/// Fetches Zotero item metadata when `zotero` is provided (best-effort; never
+/// returns an error — failures are silently ignored).
+async fn write_extraction_meta(
+    dir: &std::path::Path,
+    item_key: &str,
+    zotero: Option<&ZoteroClient>,
+    mode_str: Option<&str>,
+    pdf_source: Option<&PdfSource>,
+) {
+    let mut meta = ExtractionMeta {
+        item_key: item_key.to_string(),
+        zotero_user_id: std::env::var("ZOTERO_USER_ID").ok(),
+        title: None,
+        authors: None,
+        item_type: None,
+        date: None,
+        doi: None,
+        url: None,
+        publication_title: None,
+        extracted_at: Some(iso_now()),
+        processing_mode: mode_str.map(String::from),
+        pdf_source: pdf_source.and_then(|s| serde_json::to_value(s).ok()),
+    };
+
+    if let Some(zc) = zotero {
+        if let Ok(item) = zc.get_item(item_key).await {
+            meta.title = item.data.title;
+            meta.item_type = Some(item.data.item_type);
+            meta.date = item.data.date;
+            meta.doi = item.data.doi;
+            meta.url = item.data.url;
+            meta.publication_title = item.data.publication_title;
+            let authors: Vec<String> = item
+                .data
+                .creators
+                .iter()
+                .filter(|c| c.creator_type == "author")
+                .map(|c| match (&c.first_name, &c.last_name, &c.name) {
+                    (Some(f), Some(l), _) if !l.is_empty() => format!("{f} {l}"),
+                    (_, Some(l), _) if !l.is_empty() => l.clone(),
+                    (_, _, Some(n)) if !n.is_empty() => n.clone(),
+                    _ => String::new(),
+                })
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !authors.is_empty() {
+                meta.authors = Some(authors);
+            }
+        }
+    }
+
+    if let Ok(json) = serde_json::to_string_pretty(&meta) {
+        let _ = std::fs::write(dir.join("meta.json"), json);
+    }
 }
 
 /// Collect all pdf_url values from an OpenAlex Work's locations.
@@ -428,16 +619,24 @@ fn is_zotero_write_denied(e: &WorkTextError) -> bool {
     )
 }
 
-/// Find the key of a `Papers.zip` imported_file child attachment on `parent_key`.
+/// The filename used for DataLab extraction backups stored in Zotero.
+/// The parent item key is embedded so `extract list` can find all extractions
+/// with a single `q=papers_extract` query instead of paginating all attachments.
+fn papers_extract_filename(parent_key: &str) -> String {
+    format!("papers_extract_{parent_key}.zip")
+}
+
+/// Find the attachment key of the `papers_extract_{parent_key}.zip` child on `parent_key`.
 async fn find_papers_zip_key(
     zc: &ZoteroClient,
     parent_key: &str,
 ) -> Result<Option<String>, WorkTextError> {
+    let expected = papers_extract_filename(parent_key);
     let children = zc
         .list_item_children(parent_key, &ItemListParams::default())
         .await?;
     for child in &children.items {
-        if child.data.filename.as_deref() == Some("Papers.zip")
+        if child.data.filename.as_deref() == Some(&expected)
             && child.data.link_mode.as_deref() == Some("imported_file")
         {
             return Ok(Some(child.key.clone()));
@@ -467,6 +666,13 @@ fn zip_cache_dir(dir: &std::path::Path, id: &str) -> std::io::Result<Vec<u8>> {
     if json_path.exists() {
         zip.start_file(format!("{id}.json"), opts)?;
         zip.write_all(&std::fs::read(&json_path)?)?;
+    }
+
+    // Add meta.json (if present)
+    let meta_path = dir.join("meta.json");
+    if meta_path.exists() {
+        zip.start_file("meta.json", opts)?;
+        zip.write_all(&std::fs::read(&meta_path)?)?;
     }
 
     // Add images/ (if present)
@@ -509,18 +715,19 @@ fn unzip_to_cache_dir(zip_bytes: &[u8], dir: &std::path::Path) -> std::io::Resul
     Ok(())
 }
 
-/// Best-effort: zip the cache dir for `id` and upload it as `Papers.zip` under `parent_key`.
+/// Best-effort: zip the cache dir for `id` and upload it as `papers_extract_{id}.zip` under `parent_key`.
 async fn upload_papers_zip(
     zc: &ZoteroClient,
     parent_key: &str,
     dir: &std::path::Path,
     id: &str,
 ) -> Result<(), WorkTextError> {
+    let filename = papers_extract_filename(id);
     let zip_bytes = zip_cache_dir(dir, id).map_err(|e| WorkTextError::PdfExtract(e.to_string()))?;
     let att_key = zc
-        .create_imported_attachment(parent_key, "Papers.zip", "application/zip")
+        .create_imported_attachment(parent_key, &filename, "application/zip")
         .await?;
-    zc.upload_attachment_file(&att_key, "Papers.zip", zip_bytes)
+    zc.upload_attachment_file(&att_key, &filename, zip_bytes)
         .await?;
     Ok(())
 }
@@ -604,6 +811,11 @@ pub async fn do_extract(
         }
 
         // --- DataLab API call ---
+        // Capture mode string and original source before they are moved/overwritten.
+        let mode_str_opt = serde_json::to_value(&mode)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from));
+        let original_source = source.clone();
         let dl_result = dl
             .convert_document(MarkerRequest {
                 file: Some(pdf_bytes),
@@ -646,6 +858,16 @@ pub async fn do_extract(
                     }
                 }
             }
+
+            // Write meta.json (best-effort, before upload so it's included in the ZIP)
+            write_extraction_meta(
+                dir,
+                zotero_id,
+                zotero,
+                mode_str_opt.as_deref(),
+                Some(&original_source),
+            )
+            .await;
 
             // Best-effort: upload Papers.zip to Zotero (silently skip on 403)
             if let Some(zc) = zotero {

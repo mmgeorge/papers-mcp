@@ -157,12 +157,15 @@ impl ZoteroClient {
                     return Err(ZoteroError::NotRunning { path });
                 }
             }
-            // Zotero not found on disk — fall back to web API with disk cache.
-            let mut client = Self::new(user_id, api_key);
-            if let Ok(cache) = DiskCache::default_location(std::time::Duration::from_secs(60)) {
-                client = client.with_cache(cache);
-            }
-            Ok(client)
+            // Zotero not found on disk — fall back to the web API.
+            // Cache disabled: write operations (upload/download) would make
+            // subsequent list calls return stale results within the TTL window.
+            // Re-enable once cache invalidation on write is implemented.
+            // let mut client = Self::new(&user_id, &api_key);
+            // if let Ok(c) = DiskCache::default_location(std::time::Duration::from_secs(60)) {
+            //     client = client.with_cache(c);
+            // }
+            Ok(Self::new(user_id, api_key))
         }
     }
 

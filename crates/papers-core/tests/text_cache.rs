@@ -5,7 +5,7 @@
 ///
 /// **DataLab is always mocked with wiremock** — never call the real DataLab API
 /// from tests. Real calls spend credits and take ~25 seconds.
-use papers_core::text::{do_extract, PdfSource, ProcessingMode};
+use papers_core::text::{do_extract, read_extraction_meta, PdfSource, ProcessingMode};
 use papers_datalab::DatalabClient;
 use papers_zotero::{ItemListParams, ZoteroClient};
 use std::path::PathBuf;
@@ -132,15 +132,16 @@ async fn make_test_zotero_item() -> Option<(ZoteroClient, String)> {
     Some((zotero, key))
 }
 
-/// Count how many `Papers.zip` imported_file attachments are on `parent_key`.
+/// Count how many `papers_extract_{parent_key}.zip` imported_file attachments are on `parent_key`.
 async fn count_papers_zip(zotero: &ZoteroClient, parent_key: &str) -> usize {
+    let expected = format!("papers_extract_{parent_key}.zip");
     zotero
         .list_item_children(parent_key, &ItemListParams::default())
         .await
         .map(|r| {
             r.items
                 .iter()
-                .filter(|c| c.data.filename.as_deref() == Some("Papers.zip"))
+                .filter(|c| c.data.filename.as_deref() == Some(&expected))
                 .count()
         })
         .unwrap_or(0)
@@ -444,4 +445,128 @@ async fn test_cached_markdown_content() {
         header.contains("test") || header.contains("augmented") || header.contains("vertex"),
         "unexpected first lines: {header:?}"
     );
+}
+
+/// Verify that `do_extract` writes `meta.json` with the correct `item_key` and
+/// `processing_mode` when called without a Zotero client (no title fetching).
+#[tokio::test]
+async fn test_meta_json_written_without_zotero() {
+    // Use a dedicated key so parallel tests don't interfere.
+    let key = "METAKEY01";
+    let cdir = dirs::cache_dir()
+        .expect("no cache dir")
+        .join("papers")
+        .join("datalab")
+        .join(key);
+    let _ = std::fs::remove_dir_all(&cdir);
+
+    let (_server, dl) = setup_datalab_mock().await;
+    let mut source = PdfSource::ZoteroRemote { item_key: key.to_string() };
+    do_extract(vec![0u8], key, None, Some((&dl, ProcessingMode::Accurate)), &mut source)
+        .await
+        .expect("do_extract failed");
+
+    // meta.json must be present
+    let meta_path = cdir.join("meta.json");
+    assert!(meta_path.exists(), "meta.json was not written");
+
+    let meta = read_extraction_meta(key).expect("read_extraction_meta returned None");
+    assert_eq!(meta.item_key, key);
+    assert_eq!(meta.processing_mode.as_deref(), Some("accurate"));
+    // No Zotero client — title/authors should be absent
+    assert!(meta.title.is_none(), "title should be None without Zotero");
+    assert!(meta.authors.is_none(), "authors should be None without Zotero");
+    // extracted_at should be a plausible ISO-8601 string
+    let ts = meta.extracted_at.expect("extracted_at missing");
+    assert!(ts.contains('T') && ts.ends_with('Z'), "unexpected timestamp: {ts}");
+    // pdf_source should be recorded as zotero_remote
+    let src_val = meta.pdf_source.expect("pdf_source missing");
+    assert_eq!(src_val["type"], "zotero_remote");
+
+    let _ = std::fs::remove_dir_all(&cdir);
+}
+
+/// Verify that `do_extract` enriches `meta.json` with title and authors when
+/// a Zotero client is provided (mocked via wiremock).
+#[tokio::test]
+async fn test_meta_json_enriched_with_mock_zotero() {
+    let key = "META0201"; // 8 uppercase/digit chars — passes is_valid_zotero_key
+    let cdir = dirs::cache_dir()
+        .expect("no cache dir")
+        .join("papers")
+        .join("datalab")
+        .join(key);
+    let _ = std::fs::remove_dir_all(&cdir);
+
+    // Mock DataLab
+    let (_dl_server, dl) = setup_datalab_mock().await;
+
+    // Mock Zotero GET /users/12345/items/<key>
+    let zotero_server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path(format!("/users/12345/items/{key}")))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "key": key,
+            "version": 1,
+            "library": { "type": "user", "id": 12345, "name": "test", "links": {} },
+            "links": {},
+            "meta": {},
+            "data": {
+                "key": key,
+                "version": 1,
+                "itemType": "journalArticle",
+                "title": "Meta Test Paper",
+                "creators": [
+                    { "creatorType": "author", "firstName": "Alice", "lastName": "Smith" },
+                    { "creatorType": "author", "firstName": "Bob",   "lastName": "Jones" }
+                ],
+                "date": "2024",
+                "DOI": "10.1234/test",
+                "publicationTitle": "Journal of Testing",
+                "tags": [],
+                "collections": [],
+                "dateAdded": "2024-01-01T00:00:00Z",
+                "dateModified": "2024-01-01T00:00:00Z"
+            }
+        })))
+        .mount(&zotero_server)
+        .await;
+
+    // Also mock the children check and upload that do_extract triggers for new extractions
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path_regex(format!("/users/12345/items/{key}/children")))
+        .respond_with(wiremock::ResponseTemplate::new(200)
+            .insert_header("Total-Results", "0")
+            .set_body_json(serde_json::json!([])))
+        .mount(&zotero_server)
+        .await;
+    // Stub write endpoints so upload doesn't fail fatally (403 is silently skipped)
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path_regex(format!("/users/12345/items/{key}/children")))
+        .respond_with(wiremock::ResponseTemplate::new(403).set_body_json(serde_json::json!({"error": "forbidden"})))
+        .mount(&zotero_server)
+        .await;
+
+    let zotero = ZoteroClient::new("12345", "test-key").with_base_url(zotero_server.uri());
+    let mut source = PdfSource::ZoteroRemote { item_key: key.to_string() };
+    do_extract(vec![0u8], key, Some(&zotero), Some((&dl, ProcessingMode::Fast)), &mut source)
+        .await
+        .expect("do_extract failed");
+
+    let meta = read_extraction_meta(key).expect("read_extraction_meta returned None");
+    assert_eq!(meta.item_key, key);
+    assert_eq!(meta.title.as_deref(), Some("Meta Test Paper"));
+    assert_eq!(meta.processing_mode.as_deref(), Some("fast"));
+    let authors = meta.authors.expect("authors missing");
+    assert!(authors.contains(&"Alice Smith".to_string()), "missing Alice Smith in {authors:?}");
+    assert!(authors.contains(&"Bob Jones".to_string()), "missing Bob Jones in {authors:?}");
+    assert_eq!(meta.item_type.as_deref(), Some("journalArticle"));
+    assert_eq!(meta.doi.as_deref(), Some("10.1234/test"));
+    assert_eq!(meta.publication_title.as_deref(), Some("Journal of Testing"));
+
+    // meta.json must also be included in zip_cache_dir (i.e. present in the cache dir)
+    let meta_path = cdir.join("meta.json");
+    assert!(meta_path.exists(), "meta.json not present on disk");
+
+    let _ = std::fs::remove_dir_all(&cdir);
 }

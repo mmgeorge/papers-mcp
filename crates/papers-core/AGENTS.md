@@ -104,6 +104,21 @@ pub use summary::SlimListResponse;
 4. Add wiremock tests in `tests/api.rs`
 5. Update `CHANGES.md` if the list response differs from the raw API
 
+## Integration test cache directory
+
+Tests that touch the on-disk DataLab cache must redirect it away from the
+production `papers/datalab` location. Set `PAPERS_DATALAB_CACHE_DIR` to a test
+path such as `{cache_dir}/papers/test` **before** calling any cache helper:
+
+```rust
+unsafe { std::env::set_var("PAPERS_DATALAB_CACHE_DIR", test_dir) };
+```
+
+`datalab_cache_dir()` and `datalab_cached_item_keys()` both honour this env var.
+When unset, they fall back to `{cache_dir}/papers/datalab` (the production path).
+
+See `papers-cli/tests/extract.rs` for the canonical pattern using `OnceLock`.
+
 ## Testing DataLab calls
 
 **Always mock DataLab with wiremock — never call the real API from tests.**

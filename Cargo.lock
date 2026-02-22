@@ -1330,6 +1330,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "wiremock",
+ "zip",
 ]
 
 [[package]]
